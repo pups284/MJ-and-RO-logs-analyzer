@@ -252,6 +252,9 @@ class AnalyzeTab(QWidget):
         return items[0].data(Qt.UserRole)
 
     def _on_file_selected(self):
+        # При переключении между файлами панель деталей сбрасываем,
+        # чтобы «Что нашли» не показывало код из старого файла.
+        self._clear_details()
         # Перерисовываем обе таблицы, чтобы применился фильтр
         self.refresh_table()
         self.refresh_hidden()

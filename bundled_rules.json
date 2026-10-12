@@ -346,16 +346,17 @@
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
-    "all_of": [ "err_sys_fileload" ],
+    "all_of": [],
     "any_of": [],
     "none_of": [],
     "block_pattern": null,
-    "custom_check": null,
-    "explanation": "Игра не нашла нужный файл и упала. Если путь ведёт в GTA V — повреждена игра, если в cache/ или dlc_mj_*/dlc_maj_*/majestic — повреждён наш кеш.",
+    "custom_check": "sys_fileload_detail",
+    "count_pattern": "",
+    "count_expected": [],
+    "explanation": "Игра не нашла нужный файл ресурсов. Точное имя rpf видно в строке ниже.",
     "suggestion": "Файл GTA V — проверить целостность. Наш файл — очистить кеш. Графические моды — убрать.",
-    "faq_link": "https://panel.majestic-rp.tech/faq?item=46",
-    "priority": 100
-  },
+    "faq_link": "https://panel.majestic-rp.tech/faq?item=46"
+  }
   {
     "id": "gfx-d3d-init",
     "name": "Клиент: ошибка инициализации графики",

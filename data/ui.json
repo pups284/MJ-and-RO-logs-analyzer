@@ -1,0 +1,12 @@
+{
+  "columns": {
+    "icon": true,
+    "rule": true,
+    "file": true,
+    "log_type": false,
+    "category": false,
+    "severity": false,
+    "note": true,
+    "signature": false
+  }
+}

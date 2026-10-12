@@ -13,5 +13,5 @@ def main() -> None:
     app.setStyleSheet(STYLE)
 
     win = MainWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec())

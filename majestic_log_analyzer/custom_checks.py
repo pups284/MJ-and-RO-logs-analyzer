@@ -93,8 +93,40 @@ def check_duplicate_count(content: str, lower: str, rule: Rule):
     sig = f"dupcount:{count}"
     return ctx, sig, idx, len(pattern)
 
+def check_sys_fileload_detail(content: str, lower: str, rule: Rule):
+    """Для ERR_SYS_FILELOAD в client логах.
+
+    В логе обычно есть две строки с ERR_SYS_FILELOAD:
+      1) содержательная:  ERR_SYS_FILELOAD, Missing rpf: <путь> 0
+      2) хвост:           ERR_SYS_FILELOAD happened. Error message: ...
+    Нам нужна первая. Ищем все вхождения "err_sys_fileload," (с запятой,
+    чтобы не поймать "happened") и берём последнюю содержательную строку.
+    """
+    # "\s*,\s*" — с запятой сразу после имени, регистр игнорируем через lower
+    rx = re.compile(r"err_sys_fileload\s*,\s*\S[^\n]*", re.I)
+
+    last_match = None
+    for m in rx.finditer(lower):
+        last_match = m
+    if last_match is None:
+        return None
+
+    idx = last_match.start()
+    # конец — до конца текущей строки, но не длиннее 300 символов
+    end = content.find("\n", idx)
+    if end < 0:
+        end = len(content)
+    if end - idx > 300:
+        end = idx + 300
+
+    # при нормализации мы уберём таймстемп и т.п., но саму строку оставим как есть
+    sig = content[idx:end].rstrip()
+    ctx = extract_context(content, idx, end - idx)
+    return ctx, sig, idx, end - idx
+
 
 CUSTOM_CHECKS: dict[str, Callable] = {
     "duplicate_weapon_mods": check_duplicate_weapon,
     "duplicate_count":       check_duplicate_count,
+    "sys_fileload_detail":   check_sys_fileload_detail,
 }

@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Optional
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QListWidget,
-    QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
-    QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QSplitter, QVBoxLayout, QWidget,
 )
 
 from ..models import Rule
@@ -20,6 +20,12 @@ from ..storage import (
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
+def _lbl(text: str, tooltip: str = "") -> QLabel:
+    """Подпись поля формы. Если задан tooltip — он появится при наведении."""
+    lbl = QLabel(text)
+    if tooltip:
+        lbl.setToolTip(tooltip)
+    return lbl
 
 class RulesTab(QWidget):
     def __init__(self, app: "MainWindow"):
@@ -55,45 +61,119 @@ class RulesTab(QWidget):
 
         right = QWidget()
         form = QFormLayout(right)
-        form.setContentsMargins(12, 4, 12, 4); form.setSpacing(8)
+        form.setContentsMargins(12, 4, 12, 4)
+        form.setSpacing(8)
         form.setLabelAlignment(Qt.AlignRight)
 
         self.f_id = QLineEdit(); self.f_id.setReadOnly(True)
-        form.addRow("ID:", self.f_id)
-        self.f_name = QLineEdit(); form.addRow("Название:", self.f_name)
+        form.addRow(_lbl(
+            "ID:",
+            "Уникальный идентификатор правила.\n"
+            "Используется в notes.json. Генерируется автоматически.",
+        ), self.f_id)
+
+        self.f_name = QLineEdit()
+        form.addRow(_lbl(
+            "Название:",
+            "Как правило отображается в таблице находок и в списке слева.",
+        ), self.f_name)
 
         self.f_log = QComboBox()
         for x in ("any", "main", "patcher", "client", "service", "cef"):
             self.f_log.addItem(x, x)
-        form.addRow("Тип лога:", self.f_log)
+        form.addRow(_lbl(
+            "Тип лога:",
+            "К каким логам применяется правило.\n"
+            "any — ко всем, main — только к main.log,\n"
+            "client — только к client*.log и так далее.",
+        ), self.f_log)
 
         self.f_sev = QComboBox()
         for x in ("error", "warning", "info"):
             self.f_sev.addItem(x, x)
-        form.addRow("Важность:", self.f_sev)
+        form.addRow(_lbl(
+            "Важность:",
+            "Цвет значка и приоритет находки:\n"
+            "error — красный, warning — жёлтый, info — синий.",
+        ), self.f_sev)
 
-        self.f_cat = QLineEdit(); form.addRow("Категория:", self.f_cat)
-        self.f_en = QCheckBox("Включено"); form.addRow("", self.f_en)
+        self.f_cat = QLineEdit()
+        form.addRow(_lbl(
+            "Категория:",
+            "Смысловая группа: Лицензия, Сеть, Патчер, Клиент и т.п.\n"
+            "Показывается в колонке «Категория».",
+        ), self.f_cat)
+
+        self.f_en = QCheckBox("Включено")
+        form.addRow(_lbl(
+            "",
+            "Если снять галку — правило не участвует в анализе,\n"
+            "но остаётся в rules.json и список не пропадёт.",
+        ), self.f_en)
 
         self.f_all = QPlainTextEdit(); self.f_all.setPlaceholderText("по одному в строке")
-        form.addRow("allOf:", self.f_all)
-        self.f_any = QPlainTextEdit(); form.addRow("anyOf:", self.f_any)
-        self.f_none = QPlainTextEdit(); form.addRow("noneOf:", self.f_none)
-        self.f_block = QLineEdit(); form.addRow("blockPattern:", self.f_block)
-        self.f_check = QLineEdit(); form.addRow("custom_check:", self.f_check)
+        form.addRow(_lbl(
+            "Должны встречаться:",
+            "Все эти подстроки должны присутствовать в логе, чтобы правило сработало.\n"
+            "По одной на строку. Регистр не важен.\n"
+            "(в rules.json — поле allOf)",
+        ), self.f_all)
 
-        # ── Поля для count-правил ──
-        self.f_count_pattern = QLineEdit()
-        self.f_count_pattern.setPlaceholderText("напр.: Duplicate weapon item")
-        form.addRow("Что считать:", self.f_count_pattern)
+        self.f_any = QPlainTextEdit()
+        self.f_any.setPlaceholderText("по одному в строке")
+        form.addRow(_lbl(
+            "Хотя бы одно из:",
+            "Правило сработает, если встретится любая из этих подстрок.\n"
+            "По одной на строку. Регистр не важен.\n"
+            "(в rules.json — поле anyOf)",
+        ), self.f_any)
 
-        self.f_count_expected = QLineEdit()
-        self.f_count_expected.setPlaceholderText("числа через запятую, напр.: 8, 31")
-        form.addRow("Ожидаемые количества:", self.f_count_expected)
+        self.f_none = QPlainTextEdit()
+        self.f_none.setPlaceholderText("по одному в строке")
+        form.addRow(_lbl(
+            "Не должно встречаться:",
+            "Правило НЕ сработает, если в логе есть любая из этих подстрок.\n"
+            "Удобно для отсечения ложных срабатываний.\n"
+            "(в rules.json — поле noneOf)",
+        ), self.f_none)
 
-        self.f_expl = QPlainTextEdit(); form.addRow("Что это значит:", self.f_expl)
-        self.f_sugg = QPlainTextEdit(); form.addRow("Что ответить:", self.f_sugg)
-        self.f_faq = QLineEdit(); form.addRow("FAQ:", self.f_faq)
+        self.f_block = QLineEdit()
+        form.addRow(_lbl(
+            "Regex-блок:",
+            "Регулярное выражение. Если совпадает — правило срабатывает\n"
+            "и подсвечивает весь найденный блок целиком.\n"
+            "Ищется последнее совпадение в сессии.\n"
+            "(в rules.json — поле blockPattern)",
+        ), self.f_block)
+
+        self.f_check = QLineEdit()
+        form.addRow(_lbl(
+            "Кастомная проверка:",
+            "Имя встроенной проверки для нестандартной логики.\n"
+            "Доступные: duplicate_weapon_mods, duplicate_count, sys_fileload_detail.\n"
+            "(в rules.json — поле custom_check)",
+        ), self.f_check)
+
+        self.f_expl = QPlainTextEdit()
+        form.addRow(_lbl(
+            "Что это значит:",
+            "Пояснение для вас — что означает эта ошибка.\n"
+            "Показывается в правой панели при выборе находки.",
+        ), self.f_expl)
+
+        self.f_sugg = QPlainTextEdit()
+        form.addRow(_lbl(
+            "Что ответить:",
+            "Готовая подсказка для игрока — можно выделить и скопировать.\n"
+            "Показывается в правой панели при выборе находки.",
+        ), self.f_sugg)
+
+        self.f_faq = QLineEdit()
+        form.addRow(_lbl(
+            "FAQ:",
+            "Ссылка на статью FAQ.\n"
+            "Если заполнена — в панели деталей появится активная кнопка «Открыть FAQ».",
+        ), self.f_faq)
 
         wrap = QScrollArea(); wrap.setWidgetResizable(True)
         wrap.setFrameShape(QScrollArea.NoFrame); wrap.setWidget(right)

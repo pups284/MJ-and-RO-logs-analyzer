@@ -43,14 +43,29 @@ def rule_matches(rule: Rule, lower: str, content: str):
 
     primary = (rule.all_of or rule.any_of or [""])[0]
     if primary:
-        idx = lower.rfind(primary.lower())
+        # Сначала ищем «содержательное» вхождение: primary + запятая.
+        # Например, для правила с primary="err_sys_fileload" это отсеет
+        # строку-хвост "ERR_SYS_FILELOAD happened. Error message: ..."
+        # и оставит содержательную "ERR_SYS_FILELOAD, Missing rpf: ...".
+        idx = -1
+        primary_low = primary.lower()
+        primary_comma_low = primary_low + ","
+
+        # 1) пробуем "primary," снизу вверх
+        if primary_comma_low != primary_low:
+            idx = lower.rfind(primary_comma_low)
+
+        # 2) если такой формы нет — откатываемся на «голое» вхождение
+        if idx < 0:
+            idx = lower.rfind(primary_low)
+
         if idx >= 0:
             ctx = extract_context(content, idx, len(primary))
-            # сигнатура = от начала совпадения до конца строки,
-            # но не длиннее 200 символов (защита от гигантских строк)
+            # сигнатура — от начала совпадения до конца строки,
+            # но не длиннее 300 символов
             end = content.find("\n", idx)
-            if end < 0 or end - idx > 200:
-                end = idx + 200
+            if end < 0 or end - idx > 300:
+                end = idx + 300
             return ctx, content[idx:end], idx, len(primary)
     return None
 
