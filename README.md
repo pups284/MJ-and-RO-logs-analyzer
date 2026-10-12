@@ -56,7 +56,7 @@
 Требуется **Python 3.10+**.
 
 ```bash
-git clone <URL_репозитория>
+git clone https://github.com/pups284/MJ-and-RO-logs-analyzer
 cd Logs_analyzer
 
 python -m venv .venv
