@@ -20,12 +20,14 @@ from ..storage import (
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
+
 def _lbl(text: str, tooltip: str = "") -> QLabel:
-    """Подпись поля формы. Если задан tooltip — он появится при наведении."""
+    """Подпись поля формы. Если задан tooltip — покажется при наведении."""
     lbl = QLabel(text)
     if tooltip:
         lbl.setToolTip(tooltip)
     return lbl
+
 
 class RulesTab(QWidget):
     def __init__(self, app: "MainWindow"):
@@ -59,6 +61,7 @@ class RulesTab(QWidget):
         self.list.itemSelectionChanged.connect(self.on_select)
         split.addWidget(self.list)
 
+        # ───────── Форма ─────────
         right = QWidget()
         form = QFormLayout(right)
         form.setContentsMargins(12, 4, 12, 4)
@@ -100,8 +103,7 @@ class RulesTab(QWidget):
         self.f_cat = QLineEdit()
         form.addRow(_lbl(
             "Категория:",
-            "Смысловая группа: Лицензия, Сеть, Патчер, Клиент и т.п.\n"
-            "Показывается в колонке «Категория».",
+            "Смысловая группа: Лицензия, Сеть, Патчер, Клиент и т.п.",
         ), self.f_cat)
 
         self.f_en = QCheckBox("Включено")
@@ -124,7 +126,7 @@ class RulesTab(QWidget):
         form.addRow(_lbl(
             "Хотя бы одно из:",
             "Правило сработает, если встретится любая из этих подстрок.\n"
-            "По одной на строку. Регистр не важен.\n"
+            "По одной на строке. Регистр не важен.\n"
             "(в rules.json — поле anyOf)",
         ), self.f_any)
 
@@ -154,6 +156,23 @@ class RulesTab(QWidget):
             "(в rules.json — поле custom_check)",
         ), self.f_check)
 
+        # ── поля для count-правил ──
+        self.f_count_pattern = QLineEdit()
+        self.f_count_pattern.setPlaceholderText("напр.: Duplicate weapon item")
+        form.addRow(_lbl(
+            "Что считать:",
+            "Подстрока, количество вхождений которой нужно посчитать.\n"
+            "Используется только вместе с custom_check = duplicate_count.",
+        ), self.f_count_pattern)
+
+        self.f_count_expected = QLineEdit()
+        self.f_count_expected.setPlaceholderText("числа через запятую, напр.: 8, 31")
+        form.addRow(_lbl(
+            "Ожидаемые количества:",
+            "Числа через запятую. Если счёт совпадёт с любым из них — правило молчит.\n"
+            "Пусто → считать автоматически (8 для России Онлайн, 31 для Majestic RP).",
+        ), self.f_count_expected)
+
         self.f_expl = QPlainTextEdit()
         form.addRow(_lbl(
             "Что это значит:",
@@ -172,7 +191,7 @@ class RulesTab(QWidget):
         form.addRow(_lbl(
             "FAQ:",
             "Ссылка на статью FAQ.\n"
-            "Если заполнена — в панели деталей появится активная кнопка «Открыть FAQ».",
+            "Если заполнена — в панели деталей появится кнопка «Открыть FAQ».",
         ), self.f_faq)
 
         wrap = QScrollArea(); wrap.setWidgetResizable(True)
@@ -183,6 +202,8 @@ class RulesTab(QWidget):
         outer.addWidget(split, 1)
 
         self.refresh()
+
+    # ───────────── Список ─────────────
 
     def refresh(self):
         self.list.clear()
@@ -196,6 +217,8 @@ class RulesTab(QWidget):
             if self.list.item(i).data(Qt.UserRole) == rule_id:
                 self.list.setCurrentRow(i); return
 
+    # ───────────── Загрузка в форму ─────────────
+
     def on_select(self):
         items = self.list.selectedItems()
         if not items:
@@ -205,19 +228,31 @@ class RulesTab(QWidget):
         if not r:
             return
         self.current = r
-        self.f_id.setText(r.id); self.f_name.setText(r.name)
-        self.f_log.setCurrentText(r.log_type); self.f_sev.setCurrentText(r.severity)
-        self.f_cat.setText(r.category); self.f_en.setChecked(r.enabled)
-        self.f_all.setPlainText("\n".join(r.all_of))
-        self.f_any.setPlainText("\n".join(r.any_of))
-        self.f_none.setPlainText("\n".join(r.none_of))
+
+        self.f_id.setText(r.id)
+        self.f_name.setText(r.name)
+        self.f_log.setCurrentText(r.log_type)
+        self.f_sev.setCurrentText(r.severity)
+        self.f_cat.setText(r.category)
+        self.f_en.setChecked(r.enabled)
+
+        self.f_all.setPlainText("\n".join(r.all_of or []))
+        self.f_any.setPlainText("\n".join(r.any_of or []))
+        self.f_none.setPlainText("\n".join(r.none_of or []))
+
         self.f_block.setText(r.block_pattern or "")
         self.f_check.setText(r.custom_check or "")
+
         self.f_count_pattern.setText(r.count_pattern or "")
-        self.f_count_expected.setText(", ".join(str(x) for x in r.count_expected))
-        self.f_expl.setPlainText(r.explanation)
-        self.f_sugg.setPlainText(r.suggestion)
-        self.f_faq.setText(r.faq_link)
+        self.f_count_expected.setText(
+            ", ".join(str(x) for x in (r.count_expected or []))
+        )
+
+        self.f_expl.setPlainText(r.explanation or "")
+        self.f_sugg.setPlainText(r.suggestion or "")
+        self.f_faq.setText(r.faq_link or "")
+
+    # ───────────── Сохранение из формы ─────────────
 
     def _apply(self) -> bool:
         r = self.current
@@ -254,17 +289,25 @@ class RulesTab(QWidget):
         r.severity = self.f_sev.currentData()
         r.category = self.f_cat.text()
         r.enabled = self.f_en.isChecked()
-        r.all_of = [s for s in (x.strip() for x in self.f_all.toPlainText().splitlines()) if s]
-        r.any_of = [s for s in (x.strip() for x in self.f_any.toPlainText().splitlines()) if s]
-        r.none_of = [s for s in (x.strip() for x in self.f_none.toPlainText().splitlines()) if s]
+
+        r.all_of = [s for s in (x.strip() for x in
+                                self.f_all.toPlainText().splitlines()) if s]
+        r.any_of = [s for s in (x.strip() for x in
+                                self.f_any.toPlainText().splitlines()) if s]
+        r.none_of = [s for s in (x.strip() for x in
+                                 self.f_none.toPlainText().splitlines()) if s]
+
         r.block_pattern = bp or None
         r.custom_check = self.f_check.text().strip() or None
         r.count_pattern = self.f_count_pattern.text().strip()
         r.count_expected = expected
+
         r.explanation = self.f_expl.toPlainText()
         r.suggestion = self.f_sugg.toPlainText()
         r.faq_link = self.f_faq.text()
         return True
+
+    # ───────────── Кнопки сверху ─────────────
 
     def save(self):
         if not self._apply():
@@ -283,7 +326,9 @@ class RulesTab(QWidget):
     def new_rule(self):
         rid = "custom-" + uuid.uuid4().hex[:8]
         self.app.rules.append(Rule(id=rid, name="Новое правило"))
-        save_rules(self.app.rules); self.refresh(); self.select_rule(rid)
+        save_rules(self.app.rules)
+        self.refresh()
+        self.select_rule(rid)
 
     def del_rule(self):
         if not self.current:

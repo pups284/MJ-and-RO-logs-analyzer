@@ -372,7 +372,7 @@
     "count_pattern": null,
     "count_expected": [],
     "explanation": "В корневой папке GTA V найден файл мода. Моды должны лежать в папке модификаций лаунчера.",
-    "suggestion": "Перенести dxgi.dll, dinput8.dll, d3d11.dll, commandline.txt и папку ReShade в папку модификаций лаунчера.",
+    "suggestion": "Удалить файлы dxgi.dll, dinput8.dll, d3d11.dll, commandline.txt и выполнить проверку файлов GTA V в Steam/Epic Games.",
     "faq_link": "https://panel.majestic-rp.tech/faq?item=169"
   },
   {
