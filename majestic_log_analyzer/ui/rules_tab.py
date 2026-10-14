@@ -345,7 +345,7 @@ class RulesTab(QWidget):
         save_rules(self.app.rules); save_notes(self.app.notes)
         self.refresh()
         self.app.analyze_tab.run_analysis()
-        self.app.notes_tab.refresh()
+        self.app.refresh_note_tabs()
         self.app.update_status()
 
     def reset_to_bundled(self):
@@ -365,7 +365,7 @@ class RulesTab(QWidget):
         save_notes(self.app.notes)
         self.refresh()
         self.app.analyze_tab.run_analysis()
-        self.app.notes_tab.refresh()
+        self.app.refresh_note_tabs()
         self.app.update_status()
 
     def open_data_dir(self):

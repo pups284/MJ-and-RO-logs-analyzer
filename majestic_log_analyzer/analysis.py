@@ -69,14 +69,9 @@ def rule_matches(rule: Rule, lower: str, content: str):
             return ctx, content[idx:end], idx, len(primary)
     return None
 
-def pick_note(notes: list[Note], rule_id: str, sig: str, ctx: str = "") -> Optional[Note]:
-    matching = [n for n in notes if n.rule_id == rule_id and n.signature == sig]
-    if not matching:
-        return None
-    for n in matching:
-        if n.kind == "ignore":
-            return n
-    return matching[0]
+def pick_notes(notes: list[Note], rule_id: str, sig: str) -> list[Note]:
+    """Все заметки, подходящие под (rule_id, signature). Может быть много."""
+    return [n for n in notes if n.rule_id == rule_id and n.signature == sig]
 
 
 def find_duplicate_note(
@@ -116,8 +111,8 @@ def analyze(files: list[tuple[str, str]],
                 continue
             ctx, raw_sig, rel_pos, match_len = res
             sig = normalize_signature(raw_sig)
-            note = pick_note(notes, rule.id, sig, ctx)   # было pick_note(notes, rule.id, sig)
-            is_ignored = bool(note and note.kind == "ignore")
+            matching_notes = pick_notes(notes, rule.id, sig)
+            is_ignored = any(n.kind == "ignore" for n in matching_notes)
             if not rule.enabled:
                 continue
             findings.append(Finding(
@@ -129,6 +124,6 @@ def analyze(files: list[tuple[str, str]],
                 faq_link=rule.faq_link,
                 file_pos=region_start + rel_pos,   # абсолютная позиция в файле
                 file_match_len=match_len,
-                note=note, is_hidden=is_ignored,
+                notes=matching_notes, is_hidden=is_ignored,
             ))
     return findings

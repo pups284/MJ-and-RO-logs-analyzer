@@ -165,7 +165,7 @@
     "count_pattern": null,
     "count_expected": [],
     "explanation": "Windows не даёт лаунчеру писать в папку. Место на диске ни при чём, дело в правах (EPERM).",
-    "suggestion": "Нажать «Починить доступ к папкам», запустить от администратора. Если не помогло — выдать полный доступ к папкам Majestic. Проверить «Контролируемый доступ к папкам» в Defender.",
+    "suggestion": "Нажать «Починить доступ к папкам», запустить от администратора. Если не помогло — выдать полный доступ к папкам Majestic. Также может помочь удаление файлов вручную (или папки Multiplayer в целом, если проблема там). Если не получается - chkdsk C: /f",
     "faq_link": "https://panel.majestic-rp.tech/faq?item=3"
   },
   {
@@ -443,7 +443,7 @@
   {
     "id": "sys-fileload",
     "name": "Клиент: отсутствует файл ресурсов",
-    "log_type": "client",
+    "log_type": "any",
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
@@ -477,13 +477,13 @@
     "count_pattern": null,
     "count_expected": [],
     "explanation": "Отвалилась графика. Обычно графические моды (Redux, ReShade, ENB), драйвер видеокарты или DirectX.",
-    "suggestion": "Обновить драйвер, сбросить settings.xml, проверить файлы игры, переустановить DirectX, убрать графические моды.",
+    "suggestion": "Обновить драйвер, сбросить settings.xml, проверить файлы игры, переустановить DirectX, убрать графические моды, Перезагрузить систему и запустить игру заново. Если ошибка не исчезнет - переустановка игры.",
     "faq_link": "https://panel.majestic-rp.tech/faq?item=42"
   },
   {
     "id": "gen-zlib",
     "name": "Клиент: повреждённые данные (zlib)",
-    "log_type": "client",
+    "log_type": "any",
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
@@ -576,8 +576,8 @@
     "custom_check": null,
     "count_pattern": null,
     "count_expected": [],
-    "explanation": "Игра сохранила дамп после краша.",
-    "suggestion": "Взять .dmp кнопкой «Файл краш-репорта» или из %appdata%\\majestic-launcher\\Multiplayer\\crashdumps. Приложить client.log, время, Last pos.",
+    "explanation": "Игра сохранила дамп после краша. Поможет более детальное изучение логов. Если ничего не видно - посмотреть по Просмотру событий.",
+    "suggestion": "Нажмите ПКМ по пуску - Просмотр событий - Журналы windows - Приложение, справа нажмите \"Сохранить все события как\" и пришлите файл в тикет.",
     "faq_link": ""
   },
   {
@@ -620,5 +620,45 @@
     "explanation": "Процесс патчера завершился, не вернув результат. Это краш патчера — обычно антивирус, права или конфликт с процессами Rockstar. Также стоит проверить, запускается ли GTA V в целом.",
     "suggestion": "Попробуйте запустить GTA V в сюжетном режиме и предоставьте скриншот оттуда.",
     "faq_link": "https://panel.majestic-rp.tech/faq?item=18&region=ru"
+  },
+  {
+    "id": "custom-03b2556e",
+    "name": "Ошибка загрузки (переименование cache)",
+    "log_type": "main",
+    "severity": "error",
+    "category": "",
+    "enabled": true,
+    "all_of": [
+      "commit failed: UNKNOWN: unknown error, rename"
+    ],
+    "any_of": [],
+    "none_of": [],
+    "block_pattern": null,
+    "custom_check": null,
+    "count_pattern": null,
+    "count_expected": [],
+    "explanation": "При переименовании файла во время загрузки произошла ошибка. Возможные причины: отсутствие прав, антивирус, сломанный файл/дисковая система",
+    "suggestion": "Пусть попробует:\n1. Починить права доступа к папке\n2. Отключить антивирусы\n3. Удалить вручную все файлы с таким же названием (до .resource). Ошибка при удалении - перезапуск компьютера. Не решилось - chkdsk C: /f (букву диска заменить на нужную)\n4. 4 кнопки в лаунчере",
+    "faq_link": ""
+  },
+  {
+    "id": "custom-f2ed5c02",
+    "name": "Ошибка DirectX",
+    "log_type": "any",
+    "severity": "error",
+    "category": "",
+    "enabled": true,
+    "all_of": [
+      "ERR_GFX_D3D_NOD3D1X_4"
+    ],
+    "any_of": [],
+    "none_of": [],
+    "block_pattern": null,
+    "custom_check": null,
+    "count_pattern": null,
+    "count_expected": [],
+    "explanation": "Системе не удается обнаружить исполняемый файл DirectX10 или 11 или совместимую с ними видеокарту",
+    "suggestion": "Переустановите DirectX, обновите/переустановите драйвер видеокарты",
+    "faq_link": ""
   }
 ]

@@ -18,6 +18,20 @@ QWidget#CentralRoot {
     border: 2px solid transparent;
     border-radius: 12px;
 }
+/* ── Компактный список примечаний ── */
+QListWidget#NotesList {
+    font-size: 12px;
+    padding: 2px;
+}
+QListWidget#NotesList::item {
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+QListWidget#NotesList::item:selected {
+    background-color: #303a5c;
+    color: #ffffff;
+}
+
 QWidget#CentralRoot[dragging="true"] {
     border: 2px dashed #6d5cff;
     background-color: rgba(109, 92, 255, 0.05);
@@ -103,7 +117,7 @@ QListWidget, QTableWidget {
 QListWidget:focus, QTableWidget:focus { border-color: #3a4260; }
 
 QListWidget::item {
-    padding: 7px 10px;
+    padding: 5px 8px;
     border-radius: 6px;
     color: #cfd5e3;
 }
@@ -120,7 +134,7 @@ QListWidget::item:selected:!active {
 }
 
 QTableWidget::item {
-    padding: 6px 10px;
+    padding: 5px 8px;
     border: none;
     color: #cfd5e3;
 }

@@ -10,6 +10,7 @@ from ..models import LoadedFile
 from ..platform_win import apply_dark_title_bar
 from ..storage import load_notes, load_rules
 from .analyze_tab import AnalyzeTab
+from .exceptions_tab import ExceptionsTab
 from .notes_tab import NotesTab
 from .rules_tab import RulesTab
 
@@ -21,8 +22,9 @@ class MainWindow(QMainWindow):
         self.resize(1500, 950)
         self.setMinimumSize(1100, 720)
 
-        self.rules = load_rules()
-        self.notes = load_notes()
+        # ── Данные ──
+        self.rules    = load_rules()
+        self.notes    = load_notes()
         self.files: list[LoadedFile] = []
         self.findings = []
 
@@ -35,6 +37,7 @@ class MainWindow(QMainWindow):
         self._drag_timer.timeout.connect(lambda: self._set_drag_active(False))
         QApplication.instance().installEventFilter(self)
 
+        # ── Центральный виджет ──
         central = QWidget()
         central.setObjectName("CentralRoot")
         self.setCentralWidget(central)
@@ -42,36 +45,55 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(16, 14, 16, 8)
         root.setSpacing(12)
 
-        header = QFrame(); header.setObjectName("HeaderBar"); header.setFixedHeight(62)
+        # ── Header ──
+        header = QFrame()
+        header.setObjectName("HeaderBar")
+        header.setFixedHeight(62)
         hlay = QHBoxLayout(header)
-        hlay.setContentsMargins(18, 8, 18, 8); hlay.setSpacing(14)
+        hlay.setContentsMargins(18, 8, 18, 8)
+        hlay.setSpacing(14)
 
-        tb = QVBoxLayout(); tb.setContentsMargins(0, 0, 0, 0); tb.setSpacing(0)
+        tb = QVBoxLayout()
+        tb.setContentsMargins(0, 0, 0, 0)
+        tb.setSpacing(0)
         t = QLabel("Majestic Log Analyzer"); t.setObjectName("AppTitle")
-        s = QLabel("Локальный анализ логов игрового лаунчера"); s.setObjectName("AppSubtitle")
-        tb.addWidget(t); tb.addWidget(s)
-        hlay.addLayout(tb); hlay.addStretch(1)
+        s = QLabel("Локальный анализ логов игрового лаунчера")
+        s.setObjectName("AppSubtitle")
+        tb.addWidget(t)
+        tb.addWidget(s)
+        hlay.addLayout(tb)
+        hlay.addStretch(1)
 
         self.badge_rules = QLabel(); self.badge_rules.setObjectName("AppBadge")
         self.badge_notes = QLabel(); self.badge_notes.setObjectName("AppBadge")
         self.badge_files = QLabel(); self.badge_files.setObjectName("AppBadge")
         self.badge_finds = QLabel(); self.badge_finds.setObjectName("AppBadge")
-        for b in (self.badge_rules, self.badge_notes, self.badge_files, self.badge_finds):
+        for b in (self.badge_rules, self.badge_notes,
+                  self.badge_files, self.badge_finds):
             hlay.addWidget(b)
         root.addWidget(header)
 
-        self.tabs = QTabWidget(); root.addWidget(self.tabs, 1)
+        # ── Вкладки ──
+        self.tabs = QTabWidget()
+        root.addWidget(self.tabs, 1)
 
-        self.analyze_tab = AnalyzeTab(self)
-        self.rules_tab   = RulesTab(self)
-        self.notes_tab   = NotesTab(self)
+        self.analyze_tab    = AnalyzeTab(self)
+        self.rules_tab      = RulesTab(self)
+        self.notes_tab      = NotesTab(self)
+        self.exceptions_tab = ExceptionsTab(self)
 
-        self.tabs.addTab(self.analyze_tab, "Анализ")
-        self.tabs.addTab(self.rules_tab,   "Правила")
-        self.tabs.addTab(self.notes_tab,   "Исключения и примечания")
+        self.tabs.addTab(self.analyze_tab,    "Анализ")
+        self.tabs.addTab(self.rules_tab,      "Правила")
+        self.tabs.addTab(self.notes_tab,      "Примечания")
+        self.tabs.addTab(self.exceptions_tab, "Исключения")
 
         self.setStatusBar(QStatusBar())
         self.update_status()
+
+    # ───────── Публичный API ─────────
+    def refresh_note_tabs(self):
+        self.notes_tab.refresh()
+        self.exceptions_tab.refresh()
 
     # ───────── Drag & Drop ─────────
     def eventFilter(self, obj, event):
@@ -94,7 +116,8 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _handle_drop(self, event):
-        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        paths = [u.toLocalFile() for u in event.mimeData().urls()
+                 if u.isLocalFile()]
         if not paths:
             event.ignore()
             return
@@ -112,13 +135,15 @@ class MainWindow(QMainWindow):
         cw.style().polish(cw)
         cw.update()
 
+    # ───────── Статус ─────────
     def update_status(self):
-        n_rules = len(self.rules)
+        n_rules   = len(self.rules)
         n_enabled = sum(1 for r in self.rules if r.enabled)
-        n_notes = len(self.notes)
-        n_files = len(self.files)
+        n_notes   = sum(1 for n in self.notes if n.kind == "note")
+        n_exc     = sum(1 for n in self.notes if n.kind == "ignore")
+        n_files   = len(self.files)
         n_visible = sum(1 for f in self.findings if not f.is_hidden)
-        n_hidden = sum(1 for f in self.findings if f.is_hidden)
+        n_hidden  = sum(1 for f in self.findings if f.is_hidden)
 
         self.badge_rules.setText(f"Правила: {n_enabled}/{n_rules}")
         self.badge_notes.setText(f"Примечания: {n_notes}")
@@ -127,7 +152,8 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(
             f"Правила: {n_enabled}/{n_rules}    ·    "
-            f"Примечания: {n_notes}    ·    Файлов: {n_files}    ·    "
+            f"Примечания: {n_notes}    ·    Исключения: {n_exc}    ·    "
+            f"Файлов: {n_files}    ·    "
             f"Находок: {n_visible}    ·    Скрыто: {n_hidden}    ·    "
             f"💡 Перетащите .log в любое место окна"
         )

@@ -66,8 +66,6 @@ class Rule:
             "faq_link": self.faq_link,
         }
 
-
-@dataclass
 @dataclass
 class Note:
     id: str
@@ -123,8 +121,16 @@ class Finding:
     faq_link: str
     file_pos: int = 0
     file_match_len: int = 0
-    note: Optional[Note] = None
+    notes: list = field(default_factory=list)
     is_hidden: bool = False
+
+    # Удобный аксессор — используется в UI и в коде скрытия
+    @property
+    def ignore_note(self) -> Optional[Note]:
+        for n in self.notes:
+            if n.kind == "ignore":
+                return n
+        return None
 
 
 @dataclass

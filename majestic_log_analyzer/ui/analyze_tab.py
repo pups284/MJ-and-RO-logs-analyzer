@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -16,9 +14,9 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from ..log_metadata import extract_metadata, format_metadata, short_metadata_tag
 from ..analysis import analyze, find_duplicate_note
 from ..discord_import import cleanup_discord_files
+from ..log_metadata import extract_metadata, format_metadata, short_metadata_tag
 from ..models import Finding, LoadedFile, Note
 from ..normalization import detect_log_type
 from ..storage import save_notes, save_rules
@@ -33,17 +31,22 @@ if TYPE_CHECKING:
     from .main_window import MainWindow
 
 
-# Фиксированные таблицы: [значок, правило, примечание]
-COL_ICON = 0
-COL_RULE = 1
-COL_COUNT = 2
-# Расширения, которые считаем логами
+# ─────────────────────── Константы ───────────────────────
+
 ALLOWED_LOG_EXTENSIONS = {".log", ".txt"}
 
 
-def _is_log_path(p: str | Path) -> bool:
+def _is_log_path(p) -> bool:
     return Path(p).suffix.lower() in ALLOWED_LOG_EXTENSIONS
 
+
+# Таблица находок: [значок, правило]
+COL_ICON = 0
+COL_RULE = 1
+COL_COUNT = 2
+
+
+# ─────────────────────── Вкладка ───────────────────────
 
 class AnalyzeTab(QWidget):
     def __init__(self, app: "MainWindow"):
@@ -57,14 +60,22 @@ class AnalyzeTab(QWidget):
         outer.setSpacing(10)
 
         # ── Верхняя панель ──
-        top = QHBoxLayout(); top.setSpacing(8)
-        btn_load = QPushButton("Загрузить логи…"); btn_load.setObjectName("Primary")
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        btn_load = QPushButton("Загрузить логи…")
+        btn_load.setObjectName("Primary")
         btn_load.clicked.connect(self.load_files)
-        btn_discord = QPushButton("Импорт из Discord…"); btn_discord.setObjectName("Primary")
+
+        btn_discord = QPushButton("Импорт из Discord…")
+        btn_discord.setObjectName("Primary")
         btn_discord.clicked.connect(self.import_from_discord)
-        btn_clear = QPushButton("Очистить"); btn_clear.setObjectName("Ghost")
+
+        btn_clear = QPushButton("Очистить")
+        btn_clear.setObjectName("Ghost")
         btn_clear.clicked.connect(self.clear_files)
-        btn_again = QPushButton("Переанализировать"); btn_again.setObjectName("Ghost")
+
+        btn_again = QPushButton("Переанализировать")
+        btn_again.setObjectName("Ghost")
         btn_again.clicked.connect(self.run_analysis)
 
         top.addWidget(btn_load)
@@ -74,13 +85,16 @@ class AnalyzeTab(QWidget):
         top.addStretch(1)
         outer.addLayout(top)
 
-        splitter = QSplitter(Qt.Horizontal); splitter.setHandleWidth(8)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(8)
 
-        # ── Левая колонка: файлы ──
+        # ── Левая колонка: файлы + метаданные ──
         left = QWidget()
         lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0); lv.setSpacing(6)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(6)
         lv.addWidget(section_label("Файлы"))
+
         self.files_list = QListWidget()
         self.files_list.setMaximumWidth(360)
         self.files_list.itemSelectionChanged.connect(self._on_file_selected)
@@ -88,9 +102,8 @@ class AnalyzeTab(QWidget):
         self.files_list.customContextMenuRequested.connect(self._files_context_menu)
         lv.addWidget(self.files_list, 1)
 
-        # Инфо о выбранном файле: платформа / проект / путь
         self.file_info = QLabel("")
-        self.file_info.setObjectName("DetailMeta")
+        self.file_info.setObjectName("FileInfo")
         self.file_info.setWordWrap(True)
         self.file_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.file_info.setStyleSheet(
@@ -102,7 +115,6 @@ class AnalyzeTab(QWidget):
             " color: #cfd5e3;"
             "}"
         )
-        self.file_info.setObjectName("FileInfo")
         self.file_info.setMinimumHeight(60)
         lv.addWidget(self.file_info)
 
@@ -111,10 +123,11 @@ class AnalyzeTab(QWidget):
         # ── Центр: под-вкладки «Находки» и «Скрытые» ──
         self.middle_tabs = QTabWidget()
 
-        # ── Страница «Находки» ──
+        # Страница «Находки»
         findings_page = QWidget()
         fp_lay = QVBoxLayout(findings_page)
-        fp_lay.setContentsMargins(0, 0, 0, 0); fp_lay.setSpacing(6)
+        fp_lay.setContentsMargins(0, 0, 0, 0)
+        fp_lay.setSpacing(6)
 
         self.table = QTableWidget(0, COL_COUNT)
         self.table.setHorizontalHeaderLabels(["", "Правило"])
@@ -132,7 +145,7 @@ class AnalyzeTab(QWidget):
 
         self.middle_tabs.addTab(findings_page, "Находки")
 
-        # ── Страница «Скрытые» ──
+        # Страница «Скрытые»
         hidden_page = QWidget()
         hp_lay = QVBoxLayout(hidden_page)
         hp_lay.setContentsMargins(0, 0, 0, 0)
@@ -145,18 +158,18 @@ class AnalyzeTab(QWidget):
         self.hidden_info = QLabel("Скрытых находок: 0")
         self.hidden_info.setObjectName("DetailMeta")
         hidden_top.addWidget(self.hidden_info)
-
-        # растяжка между надписью и кнопками — она и разводит их по краям
         hidden_top.addStretch(1)
 
         self.btn_restore = QPushButton("Вернуть выбранное")
         self.btn_restore.setObjectName("Ghost")
         self.btn_restore.setToolTip("Снять исключение с выделенных строк")
+        self.btn_restore.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         self.btn_restore.clicked.connect(self.restore_hidden_selected)
 
         self.btn_restore_all = QPushButton("Вернуть все")
         self.btn_restore_all.setObjectName("Ghost")
         self.btn_restore_all.setToolTip("Снять все исключения")
+        self.btn_restore_all.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         self.btn_restore_all.clicked.connect(self.restore_all_hidden)
 
         hidden_top.addWidget(self.btn_restore)
@@ -185,7 +198,8 @@ class AnalyzeTab(QWidget):
         # ── Правая колонка: детали ──
         right = QWidget()
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(8, 0, 0, 0); rv.setSpacing(10)
+        rv.setContentsMargins(8, 0, 0, 0)
+        rv.setSpacing(10)
 
         self.detail_title = QLabel("<выберите находку>")
         self.detail_title.setObjectName("DetailTitle")
@@ -197,30 +211,52 @@ class AnalyzeTab(QWidget):
         self.detail_meta.setWordWrap(True)
         rv.addWidget(self.detail_meta)
 
+        # ── Блок примечаний / исключений ──
+        self.note_box = QWidget()
+        nb = QVBoxLayout(self.note_box)
+        nb.setContentsMargins(0, 0, 0, 0)
+        nb.setSpacing(4)
+        nb.addWidget(section_label("Примечания"))
+        self.note_comment_edit = QPlainTextEdit()
+        self.note_comment_edit.setReadOnly(True)
+        self.note_comment_edit.setMaximumHeight(140)
+        nb.addWidget(self.note_comment_edit)
+        self.note_box.setVisible(False)
+        rv.addWidget(self.note_box)
+
         rv.addWidget(section_label("Что нашли"))
-        self.detail_context = QPlainTextEdit(); self.detail_context.setReadOnly(True)
+        self.detail_context = QPlainTextEdit()
+        self.detail_context.setReadOnly(True)
         self.detail_context.setMaximumHeight(170)
         rv.addWidget(self.detail_context)
 
         rv.addWidget(section_label("Что это значит"))
-        self.detail_explanation = QTextEdit(); self.detail_explanation.setReadOnly(True)
+        self.detail_explanation = QTextEdit()
+        self.detail_explanation.setReadOnly(True)
         self.detail_explanation.setMaximumHeight(110)
         rv.addWidget(self.detail_explanation)
 
         rv.addWidget(section_label("Что ответить игроку"))
-        self.detail_suggestion = QTextEdit(); self.detail_suggestion.setReadOnly(True)
+        self.detail_suggestion = QTextEdit()
+        self.detail_suggestion.setReadOnly(True)
         self.detail_suggestion.setMaximumHeight(110)
         rv.addWidget(self.detail_suggestion)
 
-        btns = QHBoxLayout(); btns.setSpacing(8)
-        self.btn_open = QPushButton("Открыть в редакторе"); self.btn_open.setObjectName("Primary")
-        self.btn_fp   = QPushButton("Ложное срабатывание"); self.btn_fp.setObjectName("Danger")
+        btns = QHBoxLayout()
+        btns.setSpacing(8)
+        self.btn_open = QPushButton("Открыть в редакторе")
+        self.btn_open.setObjectName("Primary")
+        self.btn_fp = QPushButton("Ложное срабатывание")
+        self.btn_fp.setObjectName("Danger")
         self.btn_note = QPushButton("Добавить примечание…")
-        self.btn_edit = QPushButton("Редактировать правило"); self.btn_edit.setObjectName("Ghost")
+        self.btn_edit = QPushButton("Редактировать правило")
+        self.btn_edit.setObjectName("Ghost")
+
         self.btn_open.clicked.connect(self.open_in_editor)
         self.btn_fp.clicked.connect(self.mark_false_positive)
         self.btn_note.clicked.connect(self.add_note)
         self.btn_edit.clicked.connect(self.edit_rule)
+
         btns.addWidget(self.btn_open)
         btns.addWidget(self.btn_fp)
         btns.addWidget(self.btn_note)
@@ -228,7 +264,8 @@ class AnalyzeTab(QWidget):
         btns.addStretch(1)
         rv.addLayout(btns)
 
-        self.btn_faq = QPushButton("Открыть FAQ"); self.btn_faq.setObjectName("Ghost")
+        self.btn_faq = QPushButton("Открыть FAQ")
+        self.btn_faq.setObjectName("Ghost")
         self.btn_faq.clicked.connect(self.open_faq)
         self.btn_faq.setEnabled(False)
         rv.addWidget(self.btn_faq)
@@ -244,99 +281,26 @@ class AnalyzeTab(QWidget):
         self._initialized = True
         self.middle_tabs.currentChanged.connect(self._on_middle_tab_changed)
 
-    # ── Фильтр по файлу ──
-    def _selected_file_name(self) -> Optional[str]:
-        items = self.files_list.selectedItems()
-        if not items:
-            return None
-        return items[0].data(Qt.UserRole)
-
-    def _on_file_selected(self):
-        # При переключении между файлами панель деталей сбрасываем,
-        # чтобы «Что нашли» не показывало код из старого файла.
+    # ───────── Под-вкладки ─────────
+    def _on_middle_tab_changed(self, _idx: int):
+        if not self._initialized:
+            return
         self._clear_details()
-        # Перерисовываем обе таблицы, чтобы применился фильтр
-        self.refresh_table()
-        self.refresh_hidden()
-        self._update_file_info()
 
-    # ── ПКМ по файлу ──
-    def _files_context_menu(self, pos):
-        item = self.files_list.itemAt(pos)
-        if not item:
+    def _clear_details(self):
+        if not hasattr(self, "detail_title"):
             return
-        name = item.data(Qt.UserRole)
-        lf = next((f for f in self.app.files if f.name == name), None)
-        if not lf:
-            return
+        self.current = None
+        self.detail_title.setText("<выберите находку>")
+        self.detail_meta.setText("")
+        self.note_box.setVisible(False)
+        self.note_comment_edit.setPlainText("")
+        self.detail_context.setPlainText("")
+        self.detail_explanation.setPlainText("")
+        self.detail_suggestion.setPlainText("")
+        self.btn_faq.setEnabled(False)
 
-        has_path = bool(lf.path and lf.path.exists())
-
-        menu = QMenu(self)
-        act_folder = menu.addAction("Открыть в проводнике")
-        act_editor = menu.addAction("Открыть в текстовом редакторе")
-        menu.addSeparator()
-        act_copy_path = menu.addAction("Скопировать путь")
-        act_delete = menu.addAction("Удалить из списка")
-
-        act_folder.setEnabled(has_path)
-        act_editor.setEnabled(True)          # встроенный редактор работает и без path
-        act_copy_path.setEnabled(has_path)
-
-        chosen = menu.exec(self.files_list.viewport().mapToGlobal(pos))
-        if chosen is act_folder:
-            self._reveal_in_explorer(lf.path)
-        elif chosen is act_editor:
-            self._open_in_text_editor(lf)
-        elif chosen is act_copy_path:
-            from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(str(lf.path))
-        elif chosen is act_delete:
-            self._remove_file(lf)
-
-    def _reveal_in_explorer(self, path: Path):
-        try:
-            if sys.platform == "win32":
-                subprocess.Popen(["explorer", "/select,", str(path)])
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", "-R", str(path)])
-            else:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка",
-                                f"Не удалось открыть проводник:\n{e}")
-
-    def _open_in_text_editor(self, lf: LoadedFile):
-        """Открывает файл во встроенном просмотрщике.
-        В нём можно выделить строку и создать правило через
-        кнопку «Создать правило из выделения»."""
-        FileViewerDialog(
-            self, lf.name, lf.content, 0, 0,
-            on_create_rule=self._create_rule_from_text,
-        ).exec()
-
-    def _remove_file(self, lf: LoadedFile):
-        if QMessageBox.question(
-            self, "Удалить файл",
-            f"Убрать «{lf.name}» из списка?"
-        ) != QMessageBox.Yes:
-            return
-
-        # Для файлов из Discord — подчищаем temp
-        if lf.from_discord and lf.path:
-            try:
-                cleanup_discord_files([lf.path])
-            except Exception:
-                pass
-
-        self.app.files = [f for f in self.app.files if f is not lf]
-        # Если тек. находка была из этого файла — сбрасываем детали
-        if self.current and self.current.file_name == lf.name:
-            self._clear_details()
-        self.refresh_files()
-        self.run_analysis()
-
-    # ── Файлы: загрузка ──
+    # ───────── Файлы ─────────
     def load_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Выберите логи", "",
@@ -395,8 +359,10 @@ class AnalyzeTab(QWidget):
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
             except Exception as e:
-                QMessageBox.warning(self, "Ошибка чтения",
-                                    f"Не удалось прочитать {original_name}:\n{e}")
+                QMessageBox.warning(
+                    self, "Ошибка чтения",
+                    f"Не удалось прочитать {original_name}:\n{e}"
+                )
                 continue
             meta = extract_metadata(original_name, text)
             self.app.files = [f for f in self.app.files if f.name != original_name]
@@ -435,6 +401,12 @@ class AnalyzeTab(QWidget):
         paths = [f.path for f in self.app.files if f.from_discord and f.path]
         return cleanup_discord_files(paths)
 
+    def _selected_file_name(self) -> Optional[str]:
+        items = self.files_list.selectedItems()
+        if not items:
+            return None
+        return items[0].data(Qt.UserRole)
+
     def refresh_files(self):
         prev = self._selected_file_name()
         self.files_list.blockSignals(True)
@@ -460,11 +432,9 @@ class AnalyzeTab(QWidget):
                     self.files_list.setCurrentRow(i)
                     break
         self.files_list.blockSignals(False)
-        # заодно обновим инфо-панель
         self._update_file_info()
 
     def _update_file_info(self):
-        """Обновляет панель метаданных под списком файлов."""
         name = self._selected_file_name()
         if not name:
             self.file_info.setText("")
@@ -474,15 +444,90 @@ class AnalyzeTab(QWidget):
             self.file_info.setText("")
             return
         text = format_metadata(lf.metadata or {})
-        if not text:
-            text = "(метаданные не найдены)"
-        self.file_info.setText(text)
+        self.file_info.setText(text or "(метаданные не найдены)")
 
-    # ── Анализ ──
+    def _on_file_selected(self):
+        self._clear_details()
+        self.refresh_table()
+        self.refresh_hidden()
+        self._update_file_info()
+
+    # ───────── Контекстное меню файла ─────────
+    def _files_context_menu(self, pos):
+        import subprocess
+        import sys
+
+        item = self.files_list.itemAt(pos)
+        if not item:
+            return
+        name = item.data(Qt.UserRole)
+        lf = next((f for f in self.app.files if f.name == name), None)
+        if not lf:
+            return
+
+        has_path = bool(lf.path and lf.path.exists())
+
+        menu = QMenu(self)
+        act_folder = menu.addAction("Открыть в проводнике")
+        act_editor = menu.addAction("Открыть в редакторе")
+        menu.addSeparator()
+        act_copy_path = menu.addAction("Скопировать путь")
+        act_delete = menu.addAction("Удалить из списка")
+
+        act_folder.setEnabled(has_path)
+        act_editor.setEnabled(True)
+        act_copy_path.setEnabled(has_path)
+
+        chosen = menu.exec(self.files_list.viewport().mapToGlobal(pos))
+        if chosen is act_folder:
+            self._reveal_in_explorer(lf.path)
+        elif chosen is act_editor:
+            self._open_file_in_editor(lf)
+        elif chosen is act_copy_path:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(str(lf.path))
+        elif chosen is act_delete:
+            self._remove_file(lf)
+
+    def _reveal_in_explorer(self, path: Path):
+        import subprocess
+        import sys
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", "/select,", str(path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(path)])
+            else:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка",
+                                f"Не удалось открыть проводник:\n{e}")
+
+    def _open_file_in_editor(self, lf: LoadedFile):
+        FileViewerDialog(
+            self, lf.name, lf.content, 0, 0,
+            on_create_rule=self._create_rule_from_text,
+        ).exec()
+
+    def _remove_file(self, lf: LoadedFile):
+        if QMessageBox.question(
+            self, "Удалить файл",
+            f"Убрать «{lf.name}» из списка?"
+        ) != QMessageBox.Yes:
+            return
+        if lf.from_discord and lf.path:
+            try:
+                cleanup_discord_files([lf.path])
+            except Exception:
+                pass
+        self.app.files = [f for f in self.app.files if f is not lf]
+        if self.current and self.current.file_name == lf.name:
+            self._clear_details()
+        self.refresh_files()
+        self.run_analysis()
+
+    # ───────── Анализ ─────────
     def run_analysis(self):
-        # Запомним ключ текущей находки. Идентичность объекта не сохраняется,
-        # потому что analyze() каждый раз создаёт новый список Finding'ов.
-        # Ключ (rule_id, file_name, signature) устойчив к пересозданию.
         prev_key = None
         if self.current:
             prev_key = (self.current.rule_id,
@@ -494,33 +539,22 @@ class AnalyzeTab(QWidget):
         self.refresh_table()
         self.refresh_hidden()
 
-        # Восстановим выделение и заодно перечитаем поля деталей —
-        # если правило только что отредактировали, текст в правой панели
-        # обновится сразу после «Переанализировать».
         if prev_key:
             self._restore_selection(prev_key)
 
         self.app.update_status()
 
     def _restore_selection(self, key: tuple):
-        """Ищет находку с таким (rule_id, file_name, signature) в новой
-        таблице. Если находит — выделяет строку (это автоматически
-        перезапускает on_select и перерисовывает панель деталей).
-        Если не находит — сбрасывает панель деталей."""
         for row in range(self.table.rowCount()):
-            it = self.table.item(row, 0)
+            it = self.table.item(row, COL_ICON)
             if not it:
                 continue
             fid = it.data(Qt.UserRole)
             f = next((x for x in self.app.findings if id(x) == fid), None)
             if f and (f.rule_id, f.file_name, f.signature) == key:
                 self.table.selectRow(row)
-                self.table.scrollToItem(
-                    it, QAbstractItemView.PositionAtCenter
-                )
+                self.table.scrollToItem(it, QAbstractItemView.PositionAtCenter)
                 return
-        # Находка пропала (правило выключили, оно перестало матчиться,
-        # или файл удалили) — сбрасываем панель.
         self._clear_details()
 
     def _filtered(self, items: list[Finding]) -> list[Finding]:
@@ -535,6 +569,7 @@ class AnalyzeTab(QWidget):
         visible = self._filtered(visible)
         order = {"error": 0, "warning": 1, "info": 2}
         visible.sort(key=lambda f: (order.get(f.severity, 9), f.rule_name))
+
         for f in visible:
             row = self.table.rowCount()
             self.table.insertRow(row)
@@ -552,6 +587,7 @@ class AnalyzeTab(QWidget):
         hidden = self._filtered(hidden)
         order = {"error": 0, "warning": 1, "info": 2}
         hidden.sort(key=lambda f: (order.get(f.severity, 9), f.rule_name))
+
         for f in hidden:
             row = self.hidden_table.rowCount()
             self.hidden_table.insertRow(row)
@@ -561,39 +597,24 @@ class AnalyzeTab(QWidget):
             sev.setTextAlignment(Qt.AlignCenter)
             self.hidden_table.setItem(row, COL_ICON, sev)
 
-            self.hidden_table.setItem(row, COL_RULE, QTableWidgetItem(f.rule_name))
+            self.hidden_table.setItem(row, COL_RULE,
+                                      QTableWidgetItem(f.rule_name))
 
         self.middle_tabs.setTabText(1, f"Скрытые ({len(hidden)})")
         self.hidden_info.setText(f"Скрытых находок: {len(hidden)}")
         self.btn_restore.setEnabled(bool(hidden))
         self.btn_restore_all.setEnabled(bool(hidden))
 
-    def _on_middle_tab_changed(self, _idx: int):
-        if not self._initialized:
-            return
-        self._clear_details()
-
-    def _clear_details(self):
-        if not hasattr(self, "detail_title"):
-            return
-        self.current = None
-        self.detail_title.setText("<выберите находку>")
-        self.detail_meta.setText("")
-        self.detail_context.setPlainText("")
-        self.detail_explanation.setPlainText("")
-        self.detail_suggestion.setPlainText("")
-        self.btn_faq.setEnabled(False)
-
-    # ── Выбор ──
+    # ───────── Выбор ─────────
     def _on_findings_select(self):
         items = self.table.selectedItems()
         if not items:
             return
         row = items[0].row()
-        icon_item = self.table.item(row, COL_ICON)
-        if not icon_item:
+        it = self.table.item(row, COL_ICON)
+        if not it:
             return
-        fid = icon_item.data(Qt.UserRole)
+        fid = it.data(Qt.UserRole)
         f = next((x for x in self.app.findings if id(x) == fid), None)
         if f:
             self._show_finding(f)
@@ -614,10 +635,26 @@ class AnalyzeTab(QWidget):
         self.current = f
         self.detail_title.setText(f.rule_name)
         meta = f"{f.file_name}  ·  {f.severity}  ·  {f.category or '—'}"
-        if f.note:
-            label = "исключение" if f.is_hidden else "примечание"
-            meta += f"  ·  {label}: {f.note.title or f.note.kind}"
         self.detail_meta.setText(meta)
+
+        # ── блок примечаний ──
+        if f.notes:
+            parts: list[str] = []
+            for n in f.notes:
+                kind_label = "Исключение" if n.kind == "ignore" else "Примечание"
+                title = n.title or kind_label
+                block = f"{kind_label}: {title}"
+                if n.comment:
+                    block += f"\n{n.comment}"
+                parts.append(block)
+            self.note_comment_edit.setPlainText(
+                "\n\n──────────\n\n".join(parts)
+            )
+            self.note_box.setVisible(True)
+        else:
+            self.note_box.setVisible(False)
+            self.note_comment_edit.setPlainText("")
+
         self.detail_context.setPlainText(f.context)
         self.detail_explanation.setPlainText(f.explanation)
         self.detail_suggestion.setPlainText(f.suggestion)
@@ -627,7 +664,7 @@ class AnalyzeTab(QWidget):
         if self.current and self.current.faq_link:
             QDesktopServices.openUrl(QUrl(self.current.faq_link))
 
-    # ── Действия ──
+    # ───────── Открыть в редакторе ─────────
     def open_in_editor(self):
         f = self.current
         if f:
@@ -635,8 +672,6 @@ class AnalyzeTab(QWidget):
             pos = f.file_pos
             length = f.file_match_len
         else:
-            # Находка не выбрана — откроем файл, выбранный в списке слева,
-            # с самого начала. Если и файла нет — подскажем.
             file_name = self._selected_file_name()
             if not file_name:
                 QMessageBox.information(
@@ -652,7 +687,8 @@ class AnalyzeTab(QWidget):
             None,
         )
         if content is None:
-            QMessageBox.warning(self, "Не найдено", "Файл не найден среди загруженных.")
+            QMessageBox.warning(self, "Не найдено",
+                                "Файл не найден среди загруженных.")
             return
 
         FileViewerDialog(
@@ -674,12 +710,12 @@ class AnalyzeTab(QWidget):
             f"Отредактировать можно во вкладке «Правила»."
         )
 
+    # ───────── Действия с находкой ─────────
     def mark_false_positive(self):
         f = self.current
         if not f:
             return
-        dup = find_duplicate_note(self.app.notes, f.rule_id, f.signature, "ignore")
-        if dup:
+        if f.ignore_note:
             QMessageBox.information(
                 self, "Уже есть",
                 "Этот случай уже помечен как ложное срабатывание."
@@ -694,7 +730,7 @@ class AnalyzeTab(QWidget):
         ))
         save_notes(self.app.notes)
         self.run_analysis()
-        self.app.notes_tab.refresh()
+        self.app.refresh_note_tabs()
 
     def add_note(self):
         f = self.current
@@ -703,15 +739,10 @@ class AnalyzeTab(QWidget):
         dlg = NoteDialog(self, finding=f)
         if dlg.exec() != QDialog.Accepted or not dlg.result_note:
             return
-        n = dlg.result_note
-        if find_duplicate_note(self.app.notes, n.rule_id, n.signature, n.kind):
-            QMessageBox.information(self, "Дубликат",
-                                    "Такая запись для этого случая уже существует.")
-            return
-        self.app.notes.append(n)
+        self.app.notes.append(dlg.result_note)
         save_notes(self.app.notes)
         self.run_analysis()
-        self.app.notes_tab.refresh()
+        self.app.refresh_note_tabs()
 
     def edit_rule(self):
         f = self.current
@@ -720,7 +751,7 @@ class AnalyzeTab(QWidget):
         self.app.tabs.setCurrentWidget(self.app.rules_tab)
         self.app.rules_tab.select_rule(f.rule_id)
 
-    # ── Восстановление скрытых ──
+    # ───────── Восстановление скрытых ─────────
     def restore_hidden_selected(self):
         rows = sorted({ix.row() for ix in self.hidden_table.selectedIndexes()})
         if not rows:
@@ -730,15 +761,19 @@ class AnalyzeTab(QWidget):
             it = self.hidden_table.item(r, COL_ICON)
             if not it:
                 continue
-            f = next((x for x in self.app.findings if id(x) == it.data(Qt.UserRole)), None)
-            if f and f.note and f.note.kind == "ignore":
-                ids.append(f.note.id)
+            f = next((x for x in self.app.findings
+                      if id(x) == it.data(Qt.UserRole)), None)
+            if f:
+                n = f.ignore_note
+                if n:
+                    ids.append(n.id)
         if not ids:
             return
-        self.app.notes = [n for n in self.app.notes if n.id not in set(ids)]
+        id_set = set(ids)
+        self.app.notes = [n for n in self.app.notes if n.id not in id_set]
         save_notes(self.app.notes)
         self.run_analysis()
-        self.app.notes_tab.refresh()
+        self.app.refresh_note_tabs()
 
     def restore_all_hidden(self):
         ids = [n.id for n in self.app.notes if n.kind == "ignore"]
@@ -746,10 +781,11 @@ class AnalyzeTab(QWidget):
             return
         if QMessageBox.question(
             self, "Вернуть все",
-            f"Снять {len(ids)} исключений?\nВсе эти находки снова будут показаны."
+            f"Снять {len(ids)} исключений?\n"
+            "Все эти находки снова будут показаны."
         ) != QMessageBox.Yes:
             return
         self.app.notes = [n for n in self.app.notes if n.kind != "ignore"]
         save_notes(self.app.notes)
         self.run_analysis()
-        self.app.notes_tab.refresh()
+        self.app.refresh_note_tabs()
