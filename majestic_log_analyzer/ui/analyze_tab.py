@@ -480,11 +480,48 @@ class AnalyzeTab(QWidget):
 
     # ── Анализ ──
     def run_analysis(self):
+        # Запомним ключ текущей находки. Идентичность объекта не сохраняется,
+        # потому что analyze() каждый раз создаёт новый список Finding'ов.
+        # Ключ (rule_id, file_name, signature) устойчив к пересозданию.
+        prev_key = None
+        if self.current:
+            prev_key = (self.current.rule_id,
+                        self.current.file_name,
+                        self.current.signature)
+
         pairs = [(lf.name, lf.content) for lf in self.app.files]
         self.app.findings = analyze(pairs, self.app.rules, self.app.notes)
         self.refresh_table()
         self.refresh_hidden()
+
+        # Восстановим выделение и заодно перечитаем поля деталей —
+        # если правило только что отредактировали, текст в правой панели
+        # обновится сразу после «Переанализировать».
+        if prev_key:
+            self._restore_selection(prev_key)
+
         self.app.update_status()
+
+    def _restore_selection(self, key: tuple):
+        """Ищет находку с таким (rule_id, file_name, signature) в новой
+        таблице. Если находит — выделяет строку (это автоматически
+        перезапускает on_select и перерисовывает панель деталей).
+        Если не находит — сбрасывает панель деталей."""
+        for row in range(self.table.rowCount()):
+            it = self.table.item(row, 0)
+            if not it:
+                continue
+            fid = it.data(Qt.UserRole)
+            f = next((x for x in self.app.findings if id(x) == fid), None)
+            if f and (f.rule_id, f.file_name, f.signature) == key:
+                self.table.selectRow(row)
+                self.table.scrollToItem(
+                    it, QAbstractItemView.PositionAtCenter
+                )
+                return
+        # Находка пропала (правило выключили, оно перестало матчиться,
+        # или файл удалили) — сбрасываем панель.
+        self._clear_details()
 
     def _filtered(self, items: list[Finding]) -> list[Finding]:
         fname = self._selected_file_name()
@@ -593,14 +630,33 @@ class AnalyzeTab(QWidget):
     # ── Действия ──
     def open_in_editor(self):
         f = self.current
-        if not f:
-            return
-        content = next((lf.content for lf in self.app.files if lf.name == f.file_name), None)
+        if f:
+            file_name = f.file_name
+            pos = f.file_pos
+            length = f.file_match_len
+        else:
+            # Находка не выбрана — откроем файл, выбранный в списке слева,
+            # с самого начала. Если и файла нет — подскажем.
+            file_name = self._selected_file_name()
+            if not file_name:
+                QMessageBox.information(
+                    self, "Нет файла",
+                    "Сначала выберите находку или файл в списке слева."
+                )
+                return
+            pos = 0
+            length = 0
+
+        content = next(
+            (lf.content for lf in self.app.files if lf.name == file_name),
+            None,
+        )
         if content is None:
             QMessageBox.warning(self, "Не найдено", "Файл не найден среди загруженных.")
             return
+
         FileViewerDialog(
-            self, f.file_name, content, f.file_pos, f.file_match_len,
+            self, file_name, content, pos, length,
             on_create_rule=self._create_rule_from_text,
         ).exec()
 

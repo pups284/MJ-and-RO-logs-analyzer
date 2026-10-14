@@ -382,8 +382,13 @@
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
-    "all_of": [ "err_content_decoding_failed" ],
-    "any_of": [ "could not load", "auth.html" ],
+    "all_of": [
+      "err_content_decoding_failed"
+    ],
+    "any_of": [
+      "could not load",
+      "auth.html"
+    ],
     "none_of": [],
     "block_pattern": null,
     "custom_check": null,
@@ -401,7 +406,11 @@
     "category": "Запуск",
     "enabled": true,
     "all_of": [],
-    "any_of": [ "1.500.7", "1.000.7", "1.000.0" ],
+    "any_of": [
+      "1.500.7",
+      "1.000.7",
+      "1.000.0"
+    ],
     "none_of": [],
     "block_pattern": null,
     "custom_check": null,
@@ -488,7 +497,7 @@
     "count_pattern": null,
     "count_expected": [],
     "explanation": "Игра не смогла открыть файл — он повреждён.",
-    "suggestion": "Наш файл — очистить кеш. Файл GTA V — проверить целостность.",
+    "suggestion": "Пожалуйста, перезагрузите систему, проверьте игровые данные или переустановите игру.",
     "faq_link": "https://panel.majestic-rp.tech/faq?item=46"
   },
   {

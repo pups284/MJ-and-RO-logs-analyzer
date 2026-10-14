@@ -636,10 +636,18 @@ class FileViewerDialog(QDialog):
             " selection-color: #ffffff;"
             "}"
         )
+        # Отключаем перерисовку на время парсинга — на 30-мегабайтном логе
+        # это экономит около секунды.
+        self.editor.setUpdatesEnabled(False)
         self.editor.setPlainText(content)
+        self.editor.setUpdatesEnabled(True)
         v.addWidget(self.editor, 1)
 
-        self._highlighter = MajesticLogHighlighter(self.editor.document())
+        # Подсветку подключим отложенно — уже после показа диалога.
+        # QSyntaxHighlighter при attach() прогоняет все блоки через regex,
+        # а это на большом файле самый дорогой шаг. Так окно появляется
+        # мгновенно, а подсветка «дорисовывается» следом.
+        self._highlighter = None
 
         self.chk_minimap.toggled.connect(self.editor.set_minimap_enabled)
 
@@ -706,8 +714,14 @@ class FileViewerDialog(QDialog):
     def _open_find_bar(self):
         self.find_bar.open_bar()
 
+    def _attach_highlighter(self):
+        if self._highlighter is None:
+            self._highlighter = MajesticLogHighlighter(self.editor.document())
+
     def _jump(self, pos: int, length: int):
-        doc_len = len(self.editor.toPlainText())
+        # characterCount() возвращает длину + 1 (завершающий \0).
+        # В отличие от toPlainText(), этот вызов не создаёт копию строки.
+        doc_len = max(0, self.editor.document().characterCount() - 1)
         start = max(0, min(pos, doc_len))
         end = max(start, min(pos + max(length, 1), doc_len))
         cursor = self.editor.textCursor()
@@ -744,6 +758,8 @@ class FileViewerDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         apply_dark_title_bar(self)
+        # Диалог уже виден — можно спокойно запускать regex-обработку.
+        QTimer.singleShot(80, self._attach_highlighter)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.find_bar.isVisible():
