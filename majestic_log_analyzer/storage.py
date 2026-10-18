@@ -66,7 +66,7 @@ def _seed_user_data(user_dir: Path) -> None:
         pass
 
     user_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("rules.json", "notes.json", "exceptions.json", "ui.json", "settings.json"):
+    for name in ("ui.json", "settings.json"):
         s = src / name
         d = user_dir / name
         if s.exists() and not d.exists():
@@ -76,9 +76,42 @@ def _seed_user_data(user_dir: Path) -> None:
                 print(f"[storage] seed {name} failed: {e}")
 
 
+def _migrate_notes_file(user_dir: Path) -> None:
+    notes_path = user_dir / "notes.json"
+    exceptions_path = user_dir / "exceptions.json"
+    if not notes_path.exists() or exceptions_path.exists():
+        return
+    try:
+        raw = json.loads(notes_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(raw, list):
+        return
+
+    regular = [n for n in raw if n.get("kind") != "ignore"]
+    exceptions = [n for n in raw if n.get("kind") == "ignore"]
+
+    try:
+        notes_path.write_text(
+            json.dumps(regular, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        exceptions_path.write_text(
+            json.dumps(exceptions, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(
+            f"[storage] migrated notes.json → "
+            f"{len(regular)} notes, {len(exceptions)} exceptions"
+        )
+    except Exception as e:
+        print(f"[storage] migration failed: {e}")
+
+
 APP_DIR = app_dir()
 DATA_DIR = _user_data_dir()
 _seed_user_data(DATA_DIR)
+_migrate_notes_file(DATA_DIR)
 
 RULES_FILE = DATA_DIR / "rules.json"
 NOTES_FILE = DATA_DIR / "notes.json"
@@ -87,30 +120,16 @@ UI_FILE = DATA_DIR / "ui.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 
-def bundled_rules_path() -> Path:
-    return bundled_data_dir() / "rules.json"
-
-
 def load_rules() -> list[Rule]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    if RULES_FILE.exists():
-        try:
-            raw = json.loads(RULES_FILE.read_text(encoding="utf-8"))
-            if isinstance(raw, list) and raw:
-                return [Rule.from_dict(r) for r in raw]
-        except Exception as e:
-            print(f"[storage] rules.json load failed: {e}")
-
-    src = bundled_data_dir() / "rules.json"
-    if src.exists():
-        try:
-            text = src.read_text(encoding="utf-8")
-            RULES_FILE.write_text(text, encoding="utf-8")
-            raw = json.loads(text)
+    if not RULES_FILE.exists():
+        return []
+    try:
+        raw = json.loads(RULES_FILE.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
             return [Rule.from_dict(r) for r in raw]
-        except Exception as e:
-            print(f"[storage] bundled rules load failed: {e}")
+    except Exception as e:
+        print(f"[storage] rules.json load failed: {e}")
     return []
 
 
@@ -135,7 +154,6 @@ def _read_note_file(path: Path) -> list[Note]:
 
 def load_notes() -> list[Note]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
     notes: list[Note] = []
     exceptions: list[Note] = []
     seen: set[str] = set()
@@ -150,18 +168,6 @@ def load_notes() -> list[Note]:
         _add(n)
     for n in _read_note_file(EXCEPTIONS_FILE):
         _add(n)
-
-    if not notes and not exceptions:
-        src = bundled_data_dir() / "notes.json"
-        if src.exists():
-            try:
-                raw = json.loads(src.read_text(encoding="utf-8"))
-                if isinstance(raw, list):
-                    for n_dict in raw:
-                        _add(Note.from_dict(n_dict))
-                    NOTES_FILE.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-            except Exception as e:
-                print(f"[storage] bundled notes load failed: {e}")
 
     return notes + exceptions
 

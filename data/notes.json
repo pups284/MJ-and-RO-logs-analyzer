@@ -1,1 +1,13 @@
-[]
+[
+  {
+    "id": "note-bd4b673b74",
+    "rule_id": "patcher-error",
+    "signature": "game launch failed {",
+    "kind": "note",
+    "title": "majestic-patcher.node",
+    "comment": "Если ошибка с таким файлом - удаление/отключение антивирусов + переустановка файлов лаунчера",
+    "preview": "game launch failed {\n  serverId: 'ru12',\n  reason: 'patcher-error',\n  message: 'The specified module could not be found.\\r\\n' +\n    '\\\\\\\\?\\\\C:\\\\Users\\\\danii\\\\AppData\\\\Local\\\\MajesticLauncher\\\\resources\\\\app.asar.unpacked\\\\node_modules\\\\majestic-patcher\\\\binaries\\\\majestic-patcher.node'\n}",
+    "match_pattern": "",
+    "created_at": "2026-10-14T18:38:08.529988Z"
+  }
+]

@@ -14,10 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..github_sync import GitHubSync
 from ..models import Rule
-from ..storage import (
-    DATA_DIR, RULES_FILE, bundled_rules_path, load_notes, load_rules,
-    save_notes, save_rules,
-)
+from ..storage import DATA_DIR, RULES_FILE, load_rules, save_notes, save_rules
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -63,13 +60,10 @@ class RulesTab(QWidget):
         b_del = QPushButton("Удалить")
         b_del.setObjectName("Danger")
         b_del.clicked.connect(self.del_rule)
-        b_reset = QPushButton("Сбросить к bundled")
-        b_reset.setObjectName("Ghost")
-        b_reset.clicked.connect(self.reset_to_bundled)
         b_open = QPushButton("Открыть папку с данными")
         b_open.setObjectName("Ghost")
         b_open.clicked.connect(self.open_data_dir)
-        for w in (b_new, b_del, b_reset, b_open):
+        for w in (b_new, b_del, b_open):
             top.addWidget(w)
         outer.addLayout(top)
 
@@ -292,7 +286,7 @@ class RulesTab(QWidget):
         self.refresh()
         self.app.analyze_tab.run_analysis()
         self.app.update_status()
-        
+
         QMessageBox.information(
             self, "Готово",
             f"Правила успешно обновлены.\nВсего правил: {len(self.app.rules)}"
@@ -318,27 +312,6 @@ class RulesTab(QWidget):
         self.app.rules = [r for r in self.app.rules if r.id != rid]
         self.app.notes = [n for n in self.app.notes if n.rule_id != rid]
         save_rules(self.app.rules)
-        save_notes(self.app.notes)
-        self.refresh()
-        self.app.analyze_tab.run_analysis()
-        self.app.notes_tab.refresh()
-        self.app.exceptions_tab.refresh()
-        self.app.update_status()
-
-    def reset_to_bundled(self) -> None:
-        if QMessageBox.question(
-            self, "Сброс",
-            "Перезаписать rules.json bundled-версией?\n"
-            "Все пользовательские правила и примечания будут удалены."
-        ) != QMessageBox.Yes:
-            return
-        src = bundled_rules_path()
-        if not src.exists():
-            QMessageBox.warning(self, "Ошибка", "bundled_rules.json не найден.")
-            return
-        RULES_FILE.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-        self.app.rules = load_rules()
-        self.app.notes = []
         save_notes(self.app.notes)
         self.refresh()
         self.app.analyze_tab.run_analysis()
