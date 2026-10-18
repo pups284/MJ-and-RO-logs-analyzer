@@ -15,6 +15,7 @@ class Rule:
     severity: str = "warning"
     category: str = ""
     enabled: bool = True
+    priority: int = 0
     all_of: list = field(default_factory=list)
     any_of: list = field(default_factory=list)
     none_of: list = field(default_factory=list)
@@ -28,19 +29,24 @@ class Rule:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Rule":
-        raw_expected = d.get("count_expected") or []
         expected: list[int] = []
-        for x in raw_expected:
+        for x in (d.get("count_expected") or []):
             try:
                 expected.append(int(x))
             except (TypeError, ValueError):
                 pass
+        try:
+            priority = int(d.get("priority", 0))
+        except (TypeError, ValueError):
+            priority = 0
         return cls(
-            id=d["id"], name=d.get("name", d["id"]),
+            id=d["id"],
+            name=d.get("name", d["id"]),
             log_type=d.get("log_type", "any"),
             severity=d.get("severity", "warning"),
             category=d.get("category", ""),
             enabled=bool(d.get("enabled", True)),
+            priority=priority,
             all_of=list(d.get("all_of") or []),
             any_of=list(d.get("any_of") or []),
             none_of=list(d.get("none_of") or []),
@@ -55,16 +61,25 @@ class Rule:
 
     def to_dict(self) -> dict:
         return {
-            "id": self.id, "name": self.name,
-            "log_type": self.log_type, "severity": self.severity,
-            "category": self.category, "enabled": self.enabled,
-            "all_of": self.all_of, "any_of": self.any_of, "none_of": self.none_of,
-            "block_pattern": self.block_pattern, "custom_check": self.custom_check,
+            "id": self.id,
+            "name": self.name,
+            "log_type": self.log_type,
+            "severity": self.severity,
+            "category": self.category,
+            "enabled": self.enabled,
+            "priority": self.priority,
+            "all_of": self.all_of,
+            "any_of": self.any_of,
+            "none_of": self.none_of,
+            "block_pattern": self.block_pattern,
+            "custom_check": self.custom_check,
             "count_pattern": self.count_pattern or None,
             "count_expected": self.count_expected,
-            "explanation": self.explanation, "suggestion": self.suggestion,
+            "explanation": self.explanation,
+            "suggestion": self.suggestion,
             "faq_link": self.faq_link,
         }
+
 
 @dataclass
 class Note:
@@ -75,7 +90,7 @@ class Note:
     title: str = ""
     comment: str = ""
     preview: str = ""
-    match_pattern: str = ""   # ← новое: regex для игнора "похожих"
+    match_pattern: str = ""
     created_at: str = ""
 
     @classmethod
@@ -97,9 +112,12 @@ class Note:
 
     def to_dict(self) -> dict:
         return {
-            "id": self.id, "rule_id": self.rule_id,
-            "signature": self.signature, "kind": self.kind,
-            "title": self.title, "comment": self.comment,
+            "id": self.id,
+            "rule_id": self.rule_id,
+            "signature": self.signature,
+            "kind": self.kind,
+            "title": self.title,
+            "comment": self.comment,
             "preview": self.preview,
             "match_pattern": self.match_pattern,
             "created_at": self.created_at,
@@ -123,8 +141,8 @@ class Finding:
     file_match_len: int = 0
     notes: list = field(default_factory=list)
     is_hidden: bool = False
+    priority: int = 0
 
-    # Удобный аксессор — используется в UI и в коде скрытия
     @property
     def ignore_note(self) -> Optional[Note]:
         for n in self.notes:

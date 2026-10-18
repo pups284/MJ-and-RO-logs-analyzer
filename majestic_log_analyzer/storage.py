@@ -9,28 +9,19 @@ from pathlib import Path
 from .models import Rule, Note
 
 
-# ─────────────────── пути ───────────────────
-
 def app_dir() -> Path:
-    """Папка, где лежит .exe (или корень проекта при запуске из исходников)."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
 def bundled_data_dir() -> Path:
-    """Папка data, вшитая в exe (read-only источник для первого запуска)."""
-    # PyInstaller onedir: _MEIPASS указывает на _internal
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         p = Path(meipass) / "data"
         if p.exists():
             return p
-    # Фолбэки для разных вариантов сборки / запуска из исходников
-    for candidate in (
-        app_dir() / "data",
-        app_dir() / "_internal" / "data",
-    ):
+    for candidate in (app_dir() / "data", app_dir() / "_internal" / "data"):
         if candidate.exists():
             return candidate
     return app_dir() / "data"
@@ -48,7 +39,6 @@ def _can_write(path: Path) -> bool:
 
 
 def _user_data_dir() -> Path:
-    """Куда писать в рантайме: рядом с exe (portable) или %APPDATA%."""
     portable = app_dir() / "data"
     if _can_write(portable):
         return portable
@@ -66,8 +56,6 @@ def _user_data_dir() -> Path:
 
 
 def _seed_user_data(user_dir: Path) -> None:
-    """При первом запуске переносит файлы из bundled_data_dir в user_dir.
-    Существующие файлы НЕ перезаписывает."""
     src = bundled_data_dir()
     if not src.exists():
         return
@@ -78,35 +66,30 @@ def _seed_user_data(user_dir: Path) -> None:
         pass
 
     user_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("rules.json", "notes.json", "ui.json", "settings.json"):
+    for name in ("rules.json", "notes.json", "exceptions.json", "ui.json", "settings.json"):
         s = src / name
         d = user_dir / name
         if s.exists() and not d.exists():
             try:
                 shutil.copy2(s, d)
-                print(f"[storage] seeded {d} from {s}")
             except Exception as e:
                 print(f"[storage] seed {name} failed: {e}")
 
-
-# ─────────────────── глобальные пути ───────────────────
 
 APP_DIR = app_dir()
 DATA_DIR = _user_data_dir()
 _seed_user_data(DATA_DIR)
 
-RULES_FILE     = DATA_DIR / "rules.json"
-NOTES_FILE     = DATA_DIR / "notes.json"
-UI_FILE        = DATA_DIR / "ui.json"
-SETTINGS_FILE  = DATA_DIR / "settings.json"
+RULES_FILE = DATA_DIR / "rules.json"
+NOTES_FILE = DATA_DIR / "notes.json"
+EXCEPTIONS_FILE = DATA_DIR / "exceptions.json"
+UI_FILE = DATA_DIR / "ui.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
 
 
-# Совместимость с rules_tab.reset_to_bundled() — теперь это data/rules.json
 def bundled_rules_path() -> Path:
     return bundled_data_dir() / "rules.json"
 
-
-# ─────────────────── rules ───────────────────
 
 def load_rules() -> list[Rule]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -118,20 +101,16 @@ def load_rules() -> list[Rule]:
                 return [Rule.from_dict(r) for r in raw]
         except Exception as e:
             print(f"[storage] rules.json load failed: {e}")
-            print(f"[storage] file: {RULES_FILE}")
 
-    # Файла нет / битый / пустой — пробуем восстановить из bundled data/
     src = bundled_data_dir() / "rules.json"
     if src.exists():
         try:
             text = src.read_text(encoding="utf-8")
             RULES_FILE.write_text(text, encoding="utf-8")
             raw = json.loads(text)
-            print(f"[storage] restored rules.json from {src} ({len(raw)} rules)")
             return [Rule.from_dict(r) for r in raw]
         except Exception as e:
             print(f"[storage] bundled rules load failed: {e}")
-
     return []
 
 
@@ -142,51 +121,67 @@ def save_rules(rules: list[Rule]) -> None:
     )
 
 
-# ─────────────────── notes ───────────────────
+def _read_note_file(path: Path) -> list[Note]:
+    if not path.exists():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            return [Note.from_dict(n) for n in raw]
+    except Exception as e:
+        print(f"[storage] {path.name} load failed: {e}")
+    return []
+
 
 def load_notes() -> list[Note]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if NOTES_FILE.exists():
-        try:
-            raw = json.loads(NOTES_FILE.read_text(encoding="utf-8"))
-            if isinstance(raw, list):
-                return [Note.from_dict(n) for n in raw]
-        except Exception as e:
-            print(f"[storage] notes.json load failed: {e}")
-            print(f"[storage] file: {NOTES_FILE}")
+    notes: list[Note] = []
+    exceptions: list[Note] = []
+    seen: set[str] = set()
 
-    src = bundled_data_dir() / "notes.json"
-    if src.exists():
-        try:
-            text = src.read_text(encoding="utf-8")
-            NOTES_FILE.write_text(text, encoding="utf-8")
-            raw = json.loads(text)
-            print(f"[storage] restored notes.json from {src} ({len(raw)} notes)")
-            return [Note.from_dict(n) for n in raw]
-        except Exception as e:
-            print(f"[storage] bundled notes load failed: {e}")
+    def _add(n: Note) -> None:
+        if n.id in seen:
+            return
+        seen.add(n.id)
+        (exceptions if n.kind == "ignore" else notes).append(n)
 
-    # ничего нет — создаём пустой файл, чтобы он был на месте
-    try:
-        NOTES_FILE.write_text("[]", encoding="utf-8")
-    except Exception:
-        pass
-    return []
+    for n in _read_note_file(NOTES_FILE):
+        _add(n)
+    for n in _read_note_file(EXCEPTIONS_FILE):
+        _add(n)
+
+    if not notes and not exceptions:
+        src = bundled_data_dir() / "notes.json"
+        if src.exists():
+            try:
+                raw = json.loads(src.read_text(encoding="utf-8"))
+                if isinstance(raw, list):
+                    for n_dict in raw:
+                        _add(Note.from_dict(n_dict))
+                    NOTES_FILE.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            except Exception as e:
+                print(f"[storage] bundled notes load failed: {e}")
+
+    return notes + exceptions
 
 
 def save_notes(notes: list[Note]) -> None:
+    notes_only = [n for n in notes if n.kind != "ignore"]
+    exceptions = [n for n in notes if n.kind == "ignore"]
+
     NOTES_FILE.write_text(
-        json.dumps([n.to_dict() for n in notes], ensure_ascii=False, indent=2),
+        json.dumps([n.to_dict() for n in notes_only], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    EXCEPTIONS_FILE.write_text(
+        json.dumps([n.to_dict() for n in exceptions], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
-# ─────────────────── ui ───────────────────
-
 def load_ui() -> dict:
     if not UI_FILE.exists():
-        # пробуем взять из bundled data/
         src = bundled_data_dir() / "ui.json"
         if src.exists():
             try:
@@ -207,11 +202,10 @@ def load_ui() -> dict:
 
 def save_ui(data: dict) -> None:
     UI_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
-
-# ─────────────────── settings ───────────────────
 
 def load_settings() -> dict:
     if not SETTINGS_FILE.exists():
@@ -231,5 +225,6 @@ def load_settings() -> dict:
 
 def save_settings(data: dict) -> None:
     SETTINGS_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )

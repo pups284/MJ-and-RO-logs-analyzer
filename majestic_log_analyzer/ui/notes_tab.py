@@ -4,13 +4,14 @@ from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton,
-    QSplitter, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
+    QProgressDialog, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ..github_sync import GitHubSync
 from ..models import Note
-from ..storage import load_notes, save_notes
+from ..storage import load_notes, save_notes, save_rules
 from .common import section_label
 
 if TYPE_CHECKING:
@@ -24,6 +25,8 @@ class NotesTab(QWidget):
         self.current: Optional[Note] = None
         self._loading = False
         self._dirty = False
+        self.progress_dlg: Optional[QProgressDialog] = None
+        self.worker: Optional[GitHubSync] = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -31,23 +34,30 @@ class NotesTab(QWidget):
 
         top = QHBoxLayout()
         top.setSpacing(6)
-        b_reload = QPushButton("Перечитать notes.json"); b_reload.setObjectName("Ghost")
+        b_reload = QPushButton("Перечитать notes.json")
+        b_reload.setObjectName("Ghost")
         b_reload.clicked.connect(self.reload)
-        b_save = QPushButton("Сохранить"); b_save.setObjectName("Primary")
+        b_save = QPushButton("Сохранить")
+        b_save.setObjectName("Primary")
         b_save.clicked.connect(self.save)
-        b_del = QPushButton("Удалить выбранные"); b_del.setObjectName("Danger")
+        b_github = QPushButton("Обновить из GitHub")
+        b_github.setObjectName("Primary")
+        b_github.clicked.connect(self.update_from_github)
+        b_del = QPushButton("Удалить выбранные")
+        b_del.setObjectName("Danger")
         b_del.clicked.connect(self.del_selected)
 
         top.addWidget(b_reload)
         top.addWidget(b_save)
+        top.addWidget(b_github)
         top.addStretch(1)
         top.addWidget(b_del)
         outer.addLayout(top)
 
         hint = QLabel(
-            "Примечания — любые записи к правилам и их сигнатурам. "
-            "Можно создать несколько к одной сигнатуре. "
-            "Исключения живут в отдельной вкладке."
+            "Примечания — записи к правилам и их сигнатурам. "
+            "Хранятся в notes.json. Исключения живут в exceptions.json "
+            "и редактируются во вкладке «Исключения»."
         )
         hint.setObjectName("DetailMeta")
         hint.setWordWrap(True)
@@ -108,8 +118,7 @@ class NotesTab(QWidget):
 
         self.refresh()
 
-    # ── список ──
-    def refresh(self):
+    def refresh(self) -> None:
         prev_id = self.current.id if self.current else None
         self.list.blockSignals(True)
         self.list.clear()
@@ -135,7 +144,7 @@ class NotesTab(QWidget):
     def _selected_ids(self) -> list[str]:
         return [it.data(Qt.UserRole) for it in self.list.selectedItems()]
 
-    def on_select(self):
+    def on_select(self) -> None:
         ids = self._selected_ids()
         if not ids:
             self._clear_form()
@@ -158,7 +167,7 @@ class NotesTab(QWidget):
         self._dirty = False
         self.status_lbl.setText("")
 
-    def _clear_form(self):
+    def _clear_form(self) -> None:
         self.current = None
         self._loading = True
         self.lbl_rule.setText("—")
@@ -170,7 +179,7 @@ class NotesTab(QWidget):
         self._dirty = False
         self.status_lbl.setText("")
 
-    def _on_edit(self):
+    def _on_edit(self) -> None:
         if self._loading or not self.current:
             return
         self.current.title = self.title_edit.text()
@@ -178,19 +187,19 @@ class NotesTab(QWidget):
         self._dirty = True
         self.status_lbl.setText("• есть несохранённые изменения")
 
-        # обновим первую строку в списке на лету
         cur_id = self.current.id
         for i in range(self.list.count()):
             it = self.list.item(i)
             if it.data(Qt.UserRole) == cur_id:
-                rule = next((r for r in self.app.rules if r.id == self.current.rule_id), None)
+                rule = next(
+                    (r for r in self.app.rules if r.id == self.current.rule_id), None,
+                )
                 rule_label = rule.name if rule else self.current.rule_id
                 title = self.current.title or "(без заголовка)"
                 it.setText(f"{title}   ·   {rule_label}")
                 break
 
-    # ── кнопки ──
-    def reload(self):
+    def reload(self) -> None:
         if self._dirty and QMessageBox.question(
             self, "Не сохранено",
             "В текущем примечании есть несохранённые изменения. Перечитать?"
@@ -198,17 +207,68 @@ class NotesTab(QWidget):
             return
         self.app.notes = load_notes()
         self.refresh()
+        self.app.exceptions_tab.refresh()
         self.app.analyze_tab.run_analysis()
         self.app.update_status()
 
-    def save(self):
+    def save(self) -> None:
         save_notes(self.app.notes)
         self._dirty = False
         self.status_lbl.setText("Сохранено")
         self.app.analyze_tab.run_analysis()
         self.app.update_status()
 
-    def del_selected(self):
+    def update_from_github(self) -> None:
+        if QMessageBox.question(
+            self, "Обновление из GitHub",
+            "Скачать актуальные данные и объединить с локальными?\n"
+            "(При совпадении приоритет будет у версии с GitHub)"
+        ) != QMessageBox.Yes:
+            return
+
+        self.progress_dlg = QProgressDialog(
+            "Скачивание данных с GitHub…", None, 0, 0, self,
+        )
+        self.progress_dlg.setWindowTitle("Обновление")
+        self.progress_dlg.setWindowModality(Qt.WindowModal)
+        self.progress_dlg.setMinimumDuration(0)
+        self.progress_dlg.setCancelButton(None)
+        self.progress_dlg.show()
+
+        self.worker = GitHubSync(self.app.rules, self.app.notes)
+        self.worker.finished.connect(self._on_github_downloaded)
+        self.worker.start()
+
+    def _on_github_downloaded(self, success: bool, error: str,
+                              new_rules: list, new_notes: list) -> None:
+        dlg = self.progress_dlg
+        self.progress_dlg = None
+        if dlg is not None:
+            dlg.close()
+            dlg.deleteLater()
+
+        if not success:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось обновить:\n{error}")
+            return
+
+        self.app.rules = new_rules
+        self.app.notes = new_notes
+        save_rules(self.app.rules)
+        save_notes(self.app.notes)
+
+        self.refresh()
+        self.app.rules_tab.refresh()
+        self.app.exceptions_tab.refresh()
+        self.app.analyze_tab.run_analysis()
+        self.app.update_status()
+        QMessageBox.information(
+            self, "Готово",
+            f"Синхронизация завершена.\n"
+            f"Всего правил: {len(self.app.rules)}\n"
+            f"Всего примечаний: {len(self.app.notes)}"
+        )
+
+    def del_selected(self) -> None:
         ids = self._selected_ids()
         if not ids:
             return
