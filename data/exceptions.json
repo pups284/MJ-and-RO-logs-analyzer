@@ -1,13 +1,1 @@
-[
-  {
-    "id": "note-sys-fileload-tiggo7",
-    "rule_id": "sys-fileload",
-    "signature": "ERR_SYS_FILELOAD, Missing rpf: dlc_majestic_tiggo7:/x64/ftype_mods.rpf 0",
-    "kind": "ignore",
-    "title": "Игнор: dlc_majestic_tiggo7 (Missing rpf)",
-    "comment": "Tiggo7 — известная штатная недостача, на геймплей не влияет",
-    "preview": "[01:23:04.963][Error][hooks] ERR_SYS_FILELOAD, Missing rpf: dlc_majestic_tiggo7:/x64/ftype_mods.rpf 0",
-    "match_pattern": "",
-    "created_at": "2026-10-13T00:00:00Z"
-  }
-]
+[]

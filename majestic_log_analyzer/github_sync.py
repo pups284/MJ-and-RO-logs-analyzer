@@ -48,10 +48,11 @@ def merge_notes(local: list[Note], remote: list[Note]) -> list[Note]:
 class GitHubSync(QObject):
     finished = Signal(bool, str, list, list)
 
-    def __init__(self, current_rules: list[Rule], current_notes: list[Note],
-                 parent=None):
+    def __init__(self, target: str, current_rules: list[Rule],
+                 current_notes: list[Note], parent=None):
         super().__init__(parent)
         self.nam = QNetworkAccessManager(self)
+        self.target = target
         self.current_rules = current_rules
         self.current_notes = current_notes
         self.replies: list[QNetworkReply] = []
@@ -66,9 +67,12 @@ class GitHubSync(QObject):
         self.timer.start(15000)
 
     def start(self) -> None:
-        self._fetch("rules.json")
-        self._fetch("notes.json")
-        self._fetch("exceptions.json")
+        if self.target == "rules":
+            self._fetch("rules.json")
+        elif self.target == "notes":
+            self._fetch("notes.json")
+        elif self.target == "exceptions":
+            self._fetch("exceptions.json")
 
     def _fetch(self, filename: str) -> None:
         url = QUrl(BASE_URL + filename)
@@ -82,15 +86,13 @@ class GitHubSync(QObject):
         if self._finished:
             return
 
-        is_optional = filename == "exceptions.json"
         if reply.error() != QNetworkReply.NetworkError.NoError:
-            if is_optional and reply.error() == QNetworkReply.NetworkError.ContentNotFoundError:
-                self.remote_data[filename] = []
+            # Если exceptions.json нет на GitHub — подтягиваем notes.json (совместимость)
+            if filename == "exceptions.json" and reply.error() == QNetworkReply.NetworkError.ContentNotFoundError:
                 reply.deleteLater()
                 if reply in self.replies:
                     self.replies.remove(reply)
-                if not self.replies:
-                    self._finish_success()
+                self._fetch("notes.json")
                 return
             self._fail(f"Ошибка сети ({filename}): {reply.errorString()}")
             return
@@ -100,6 +102,7 @@ class GitHubSync(QObject):
         except Exception as e:
             self._fail(f"Ошибка парсинга {filename}: {e}")
             return
+
         self.remote_data[filename] = data
         reply.deleteLater()
         if reply in self.replies:
@@ -112,15 +115,40 @@ class GitHubSync(QObject):
             return
         self._finished = True
         self.timer.stop()
+
         try:
-            remote_rules = [Rule.from_dict(r) for r in self.remote_data.get("rules.json", [])]
-            remote_notes = (
-                [Note.from_dict(n) for n in self.remote_data.get("notes.json", [])]
-                + [Note.from_dict(n) for n in self.remote_data.get("exceptions.json", [])]
-            )
-            final_rules = merge_rules(self.current_rules, remote_rules)
-            final_notes = merge_notes(self.current_notes, remote_notes)
-            self.finished.emit(True, "", final_rules, final_notes)
+            if self.target == "rules":
+                remote_rules = [Rule.from_dict(r) for r in self.remote_data.get("rules.json", [])]
+                final_rules = merge_rules(self.current_rules, remote_rules)
+                self.finished.emit(True, "", final_rules, self.current_notes)
+
+            elif self.target == "notes":
+                # Тянем ТОЛЬКО примечания
+                remote_dicts = self.remote_data.get("notes.json", [])
+                remote_notes = [Note.from_dict(n) for n in remote_dicts if n.get("kind") != "ignore"]
+                
+                local_notes = [n for n in self.current_notes if n.kind != "ignore"]
+                local_exceptions = [n for n in self.current_notes if n.kind == "ignore"]
+                
+                merged_notes = merge_notes(local_notes, remote_notes)
+                self.finished.emit(True, "", self.current_rules, merged_notes + local_exceptions)
+
+            elif self.target == "exceptions":
+                # Тянем ТОЛЬКО исключения
+                remote_dicts = self.remote_data.get("exceptions.json", [])
+                if not remote_dicts and "notes.json" in self.remote_data:
+                    remote_dicts = [n for n in self.remote_data["notes.json"] if n.get("kind") == "ignore"]
+
+                for d in remote_dicts:
+                    d["kind"] = "ignore"
+                remote_exceptions = [Note.from_dict(n) for n in remote_dicts]
+
+                local_notes = [n for n in self.current_notes if n.kind != "ignore"]
+                local_exceptions = [n for n in self.current_notes if n.kind == "ignore"]
+
+                merged_exceptions = merge_notes(local_exceptions, remote_exceptions)
+                self.finished.emit(True, "", self.current_rules, local_notes + merged_exceptions)
+
         except Exception as e:
             self.finished.emit(False, f"Ошибка слияния: {e}", [], [])
 

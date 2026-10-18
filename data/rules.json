@@ -6,6 +6,7 @@
     "severity": "error",
     "category": "Лицензия",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "backup-drm-mismatch",
       "hash mismatch"
@@ -27,6 +28,7 @@
     "severity": "error",
     "category": "Лицензия",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "backup-drm-mismatch",
       "not found in GTA folder"
@@ -48,6 +50,7 @@
     "severity": "warning",
     "category": "Сеть",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "manifest-error"
     ],
@@ -71,6 +74,7 @@
     "severity": "warning",
     "category": "Версия игры",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "gta-enhanced"
     ],
@@ -91,6 +95,7 @@
     "severity": "error",
     "category": "Папка игры",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "install-invalid",
       "not-found"
@@ -112,6 +117,7 @@
     "severity": "error",
     "category": "Папка игры",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "install-invalid",
       "corrupted"
@@ -133,6 +139,7 @@
     "severity": "warning",
     "category": "Папка игры",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "setPath rejected",
       "no-executable"
@@ -154,6 +161,7 @@
     "severity": "error",
     "category": "Права доступа",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "permissions-failed",
       "eperm"
@@ -175,6 +183,7 @@
     "severity": "error",
     "category": "Диск",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "disk-space"
     ],
@@ -195,6 +204,7 @@
     "severity": "error",
     "category": "Диск",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "server-files-failed",
       "enospc"
@@ -216,6 +226,7 @@
     "severity": "error",
     "category": "Файлы сервера",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "server-files-failed",
       "expected"
@@ -239,6 +250,7 @@
     "severity": "error",
     "category": "Запуск",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "reason: 'timeout'",
       "err_timeout"
@@ -260,6 +272,7 @@
     "severity": "error",
     "category": "Патчер",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "launcher-busy",
       "err_failed_to_patch_launcher"
@@ -281,6 +294,7 @@
     "severity": "error",
     "category": "Патчер",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "launcher patches failed"
     ],
@@ -301,6 +315,7 @@
     "severity": "error",
     "category": "Патчер",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "reason: 'patcher-error'"
     ],
@@ -321,6 +336,7 @@
     "severity": "error",
     "category": "Патчер",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_failed_to_inject"
     ],
@@ -341,6 +357,7 @@
     "severity": "error",
     "category": "Патчер",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "failed to get handle",
       "readprocessmemory"
@@ -362,6 +379,7 @@
     "severity": "error",
     "category": "Моды",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "found blocking mod"
     ],
@@ -382,6 +400,7 @@
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_content_decoding_failed"
     ],
@@ -405,6 +424,7 @@
     "severity": "error",
     "category": "Запуск",
     "enabled": true,
+    "priority": 0,
     "all_of": [],
     "any_of": [
       "1.500.7",
@@ -427,6 +447,7 @@
     "severity": "warning",
     "category": "Моды",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "detected openiv but not disabled"
     ],
@@ -447,6 +468,7 @@
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_sys_fileload"
     ],
@@ -467,6 +489,7 @@
     "severity": "error",
     "category": "Графика",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_gfx_d3d_init"
     ],
@@ -487,6 +510,7 @@
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_gen_zlib_2"
     ],
@@ -507,6 +531,7 @@
     "severity": "error",
     "category": "Клиент",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_mem_embeddedalloc_guard"
     ],
@@ -527,6 +552,7 @@
     "severity": "error",
     "category": "Патчер",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "err_game_crashed"
     ],
@@ -547,6 +573,7 @@
     "severity": "warning",
     "category": "Моды",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "duplicate weapon item"
     ],
@@ -567,6 +594,7 @@
     "severity": "info",
     "category": "Краш",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "minidump: temporary dump saved"
     ],
@@ -587,6 +615,7 @@
     "severity": "info",
     "category": "Клиент",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "error in event 'playerexitcolshapeready' handler",
       "baseobject is invalid"
@@ -608,6 +637,7 @@
     "severity": "error",
     "category": "",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "error: 'ERR_PATCHER_CRASH'"
     ],
@@ -628,6 +658,7 @@
     "severity": "error",
     "category": "",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "commit failed: UNKNOWN: unknown error, rename"
     ],
@@ -648,6 +679,7 @@
     "severity": "error",
     "category": "",
     "enabled": true,
+    "priority": 0,
     "all_of": [
       "ERR_GFX_D3D_NOD3D1X_4"
     ],

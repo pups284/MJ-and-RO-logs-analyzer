@@ -259,21 +259,19 @@ class RulesTab(QWidget):
     def update_from_github(self) -> None:
         if QMessageBox.question(
             self, "Обновление из GitHub",
-            "Скачать актуальные данные и объединить с локальными?\n"
+            "Скачать актуальные правила и объединить с локальными?\n"
             "(При совпадении приоритет будет у версии с GitHub)"
         ) != QMessageBox.Yes:
             return
 
-        self.progress_dlg = QProgressDialog(
-            "Скачивание данных с GitHub…", None, 0, 0, self,
-        )
+        self.progress_dlg = QProgressDialog("Скачивание правил с GitHub…", None, 0, 0, self)
         self.progress_dlg.setWindowTitle("Обновление")
         self.progress_dlg.setWindowModality(Qt.WindowModal)
         self.progress_dlg.setMinimumDuration(0)
         self.progress_dlg.setCancelButton(None)
         self.progress_dlg.show()
 
-        self.worker = GitHubSync(self.app.rules, self.app.notes)
+        self.worker = GitHubSync("rules", self.app.rules, self.app.notes)
         self.worker.finished.connect(self._on_github_downloaded)
         self.worker.start()
 
@@ -290,20 +288,14 @@ class RulesTab(QWidget):
             return
 
         self.app.rules = new_rules
-        self.app.notes = new_notes
         save_rules(self.app.rules)
-        save_notes(self.app.notes)
-
         self.refresh()
-        self.app.notes_tab.refresh()
-        self.app.exceptions_tab.refresh()
         self.app.analyze_tab.run_analysis()
         self.app.update_status()
+        
         QMessageBox.information(
             self, "Готово",
-            f"Синхронизация завершена.\n"
-            f"Всего правил: {len(self.app.rules)}\n"
-            f"Всего примечаний: {len(self.app.notes)}"
+            f"Правила успешно обновлены.\nВсего правил: {len(self.app.rules)}"
         )
 
     def new_rule(self) -> None:
