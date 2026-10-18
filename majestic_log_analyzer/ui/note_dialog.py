@@ -33,6 +33,9 @@ class NoteDialog(QDialog):
         self.existing = existing
 
         self.setWindowTitle("Редактирование записи" if existing else "Примечание")
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
         self.resize(640, 580)
 
         # Что показывать как контекст

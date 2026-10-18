@@ -19,6 +19,9 @@ class RuleFromSelectionDialog(QDialog):
     def __init__(self, parent, selected_text: str):
         super().__init__(parent)
         self.setWindowTitle("Новое правило из выделения")
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
         self.resize(700, 640)
 
         self.result_rule: Optional[Rule] = None

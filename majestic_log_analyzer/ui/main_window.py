@@ -18,7 +18,13 @@ from .rules_tab import RulesTab
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
         self.setWindowTitle("Majestic Log Analyzer")
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
         self.resize(1500, 950)
         self.setMinimumSize(1100, 720)
 

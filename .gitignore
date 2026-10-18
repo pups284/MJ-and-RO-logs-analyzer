@@ -16,6 +16,7 @@ dist/
 dist-nuitka/
 *.egg-info/
 .eggs/
+Output/
 
 # PyInstaller
 *.spec
@@ -59,3 +60,4 @@ $RECYCLE.BIN/
 *.bak
 *.tmp
 *.swp
+*.iss

@@ -16,6 +16,9 @@ class DiscordImportDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Импорт логов из Discord")
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
         self.resize(680, 520)
         self.setSizeGripEnabled(True)
 

@@ -39,168 +39,153 @@ def _pick_mono_font() -> QFont:
     return font
 
 
-# ═══════════════════════════ Подсветка синтаксиса ═══════════════════════════
+# ═══════════════════════════ Подсветка ═══════════════════════════
 
 class MajesticLogHighlighter(QSyntaxHighlighter):
     def __init__(self, document: QTextDocument):
         super().__init__(document)
-        self._rules = self._build_rules()
+        
+        # Заранее создаём форматы (чтобы не делать это на каждой строке)
+        self.fmt_ts     = self._fmt("#6b7385")
+        self.fmt_ok     = self._fmt("#7ee787", bold=True)
+        self.fmt_warn   = self._fmt("#ffb547")
+        self.fmt_err    = self._fmt("#ff5470", bold=True)
+        self.fmt_tag    = self._fmt("#a99bff")
+        self.fmt_ok_txt = self._fmt("#7ee787")
+        self.fmt_err_txt= self._fmt("#ff5470")
+        self.fmt_neutral= self._fmt("#8b94a3")
+        self.fmt_server = self._fmt("#4dd0e1")
+        self.fmt_info   = self._fmt("#4dd0e1")
+
+        # Скомпилированные регулярные выражения (объединяем по цветам)
+        self.re_ts = QRegularExpression(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]|\[\d{2}:\d{2}:\d{2}(?:\.\d{3})?\]")
+        
+        self.re_warn = QRegularExpression(
+            r"\[(?:warn|warning|debug|trace)\]"
+            r"|\bERR_[A-Z0-9_]+\b"
+            r"|'(?:TIMEOUT|NETWORK|ABORTED)'"
+        )
+
+        self.re_err = QRegularExpression(
+            r"\[(?:Error|ERROR|Warning|WARNING)\]"
+            r"|\b(?:error|Error|ERROR|fatal|Fatal|FATAL|critical|Critical|CRITICAL|crashed|failed|exception)\b"
+        )
+
+        self.re_tag = QRegularExpression(
+            r"\[\s*\([\w.\-]+\)\s*\]"
+            r"|\[(?:MAJESTIC|LAUNCH|GAME|BACKUP|CRASH|DOWNLOADER|REVALIDATE|HASHMAP|REQUEST|HOSTING|AUTH|DOWNLOAD|DISKS|DISPLAY|EMAIL|EPIC|FSR|INIT|MACRO|MASTERLIST|MIGRATE|MODSLIST|PERMISSIONS|QUEUE|RGL|SECURE|SIGN_IN|SIGN_UP|STEAM|TRUSTED_DEVICES|UPDATER|WEB|CHECKFILE|CLOTHES|DC|AUTH_HISTORY|MODSCATEGORIESLIST|NEW_PASSWORD|hooks|web|net|voice|res|sync|discord|gui|js|assets|render|hooks\.pool|hooks\.ped|res\.download|js\.script)\]"
+            r"|\bMAJESTIC:"
+        )
+
+        self.re_ok = QRegularExpression(
+            r"\bsuccess:\s*true\b"
+            r"|\b(?:ok|success|initialized|loaded|completed)\b"
+            r"|\btrue\b"
+        )
+
+        self.re_info = QRegularExpression(r"\[info\]")
+        self.re_neutral = QRegularExpression(r"\b(?:false|null|undefined)\b")
+        self.re_server = QRegularExpression(r"\b(?:ru\d{1,2}|eu\d|us\d|boston|detroit|chicago|dallas|san-diego|atlanta|las-vegas|los-angeles|san-francisco|washington|miami|tverskoy|memphis)\b")
 
     @staticmethod
-    def _fmt(color: str, *, bold: bool = False, italic: bool = False) -> QTextCharFormat:
+    def _fmt(color: str, *, bold: bool = False) -> QTextCharFormat:
         f = QTextCharFormat()
         f.setForeground(QColor(color))
         if bold:
             f.setFontWeight(QFont.Bold)
-        if italic:
-            f.setFontItalic(True)
         return f
 
-    def _build_rules(self):
-        R: list[tuple[QRegularExpression, QTextCharFormat]] = []
-
-        R.append((
-            QRegularExpression(
-                r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]"
-                r"|\[\d{2}:\d{2}:\d{2}(?:\.\d{3})?\]"
-            ),
-            self._fmt("#6b7385"),
-        ))
-        R.append((QRegularExpression(r"\bsuccess:\s*true\b"),
-                  self._fmt("#7ee787", bold=True)))
-        R.append((QRegularExpression(r"\bsuccess:\s*false\b"),
-                  self._fmt("#ffb547", bold=True)))
-
-        crit = (
-            r"\bERR_(?:PATCHER_CRASH|GAME_CRASHED|FAILED_TO_INJECT|"
-            r"GAME_START_TIMEOUT|CLIENT_LOAD_TIMEOUT|INVALID_GAME_PLATFORM|"
-            r"FAILED_TO_LAUNCH_PLATFORM|INVALID_SELECTED_GAME_PATH|"
-            r"FAILED_TO_DELETE_OLD_BACKUP|FAILED_TO_COPY_BACKUP|"
-            r"UNABLE_CALL_DEVICE_IO|MEM_MULTIALLOC_FREE|MEM_TINY_FREE_1|"
-            r"STR_FAILURE_3|FIL_PACK_3|GEN_ZLIB_2|GFX_D3D_INIT|SYS_FILELOAD|"
-            r"PATCHER_BACKUP_PATH|ANTICHEAT_INIT_FAILED)\b"
-        )
-        R.append((QRegularExpression(crit),
-                  self._fmt("#ff5470", bold=True)))
-        R.append((QRegularExpression(r"\bERR_[A-Z0-9_]+\b"),
-                  self._fmt("#ffb547")))
-        R.append((QRegularExpression(r"'(?:TIMEOUT|NETWORK|ABORTED)'"),
-                  self._fmt("#ffb547")))
-
-        R.append((QRegularExpression(r"\[info\]"), self._fmt("#4dd0e1")))
-        R.append((QRegularExpression(r"\[(?:warn|warning|debug|trace)\]"),
-                  self._fmt("#ffb547")))
-        R.append((QRegularExpression(r"\[(?:Error|ERROR|Warning|WARNING)\]"),
-                  self._fmt("#ff5470", bold=True)))
-
-        R.append((
-            QRegularExpression(
-                r"\b(?:error|Error|ERROR|fatal|Fatal|FATAL|critical|Critical|"
-                r"CRITICAL|crashed|failed|exception)\b"
-            ),
-            self._fmt("#ff5470"),
-        ))
-        R.append((
-            QRegularExpression(r"\b(?:ok|success|initialized|loaded|completed)\b"),
-            self._fmt("#7ee787"),
-        ))
-        R.append((QRegularExpression(r"\btrue\b"), self._fmt("#7ee787")))
-        R.append((QRegularExpression(r"\b(?:false|null|undefined)\b"),
-                  self._fmt("#8b94a3")))
-
-        R.append((QRegularExpression(r"\[\s*\([\w.\-]+\)\s*\]"),
-                  self._fmt("#a99bff")))
-        R.append((
-            QRegularExpression(
-                r"\[(?:MAJESTIC|LAUNCH|GAME|BACKUP|CRASH|DOWNLOADER|"
-                r"REVALIDATE|HASHMAP|REQUEST|HOSTING|AUTH|DOWNLOAD|DISKS|"
-                r"DISPLAY|EMAIL|EPIC|FSR|INIT|MACRO|MASTERLIST|MIGRATE|"
-                r"MODSLIST|PERMISSIONS|QUEUE|RGL|SECURE|SIGN_IN|SIGN_UP|"
-                r"STEAM|TRUSTED_DEVICES|UPDATER|WEB|CHECKFILE|CLOTHES|DC|"
-                r"AUTH_HISTORY|MODSCATEGORIESLIST|NEW_PASSWORD|hooks|web|"
-                r"net|voice|res|sync|discord|gui|js|assets|render|"
-                r"hooks\.pool|hooks\.ped|res\.download|js\.script)\]"
-            ),
-            self._fmt("#a99bff"),
-        ))
-        R.append((
-            QRegularExpression(
-                r"\b(?:ru\d{1,2}|eu\d|us\d|boston|detroit|chicago|dallas|"
-                r"san-diego|atlanta|las-vegas|los-angeles|san-francisco|"
-                r"washington|miami|tverskoy|memphis)\b"
-            ),
-            self._fmt("#4dd0e1"),
-        ))
-        R.append((QRegularExpression(r"\bMAJESTIC:"),
-                  self._fmt("#a99bff", bold=True)))
-
-        return R
-
     def highlightBlock(self, text: str) -> None:
-        for pattern, fmt in self._rules:
-            it = pattern.globalMatch(text)
+        if not text:
+            return
+
+        # Быстрая проверка подстрок (в C++ это работает моментально)
+        low = text.lower()
+
+        # 1. Таймстемп
+        if "[" in text:
+            it = self.re_ts.globalMatch(text)
             while it.hasNext():
                 m = it.next()
-                start = m.capturedStart()
-                length = m.capturedLength()
-                if start >= 0 and length > 0:
-                    self.setFormat(start, length, fmt)
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_ts)
+
+        # 2. Info
+        if "[info]" in low:
+            it = self.re_info.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_info)
+
+        # 3. Warn / ERR_
+        if "warn" in low or "debug" in low or "trace" in low or "err_" in low or "timeout" in low or "network" in low or "aborted" in low:
+            it = self.re_warn.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_warn)
+
+        # 4. Error
+        if "error" in low or "fatal" in low or "critical" in low or "crashed" in low or "failed" in low or "exception" in low or "[warning]" in low:
+            it = self.re_err.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_err)
+
+        # 5. Теги модулей
+        if "(" in text or "majestic" in low:
+            it = self.re_tag.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_tag)
+
+        # 6. Позитивные маркеры
+        if "true" in low or "ok" in low or "success" in low or "loaded" in low or "initialized" in low:
+            it = self.re_ok.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_ok_txt)
+
+        # 7. Нейтральные (false, null)
+        if "false" in low or "null" in low or "undefined" in low:
+            it = self.re_neutral.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_neutral)
+
+        # 8. Сервера
+        if "ru" in low or "miami" in low or "tverskoy" in low:
+            it = self.re_server.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_server)
 
 
-# ═══════════════════════════ Миникарта (Sublime-style) ═══════════════════════════
+# ═══════════════════════════ Миникарта (Текстовая) ═══════════════════════════
 
-_MINIMAP_BG     = QColor("#0c0f16")
-_MINIMAP_VIEW   = QColor(255, 255, 255, 22)
-_MINIMAP_VIEW_B = QColor(255, 255, 255, 60)
-
-# Цвета миникарты. Все приглушённые, чтобы текст был читаемым; цветных
-# акцентов немного — только реальные предупреждения и ошибки.
-_MM_TEXT_DEFAULT = "#3d4355"   # обычный текст (info/debug/что угодно)
-_MM_TEXT_DEBUG   = "#2e3444"   # [debug]/[trace] — почти сливается с фоном
-_MM_TEXT_WARN    = "#a07a2a"   # [warn] и ERR_* без критичности
-_MM_TEXT_ERROR   = "#b04050"   # [error]/err_/fatal/crashed
-_MM_TEXT_OK      = "#3d8a52"   # ok/success/loaded/true
-_MM_TEXT_TAG     = "#6a5da8"   # MAJESTIC: / (patcher) / (client)
+_MM_TEXT_DEFAULT = "#3d4355"
+_MM_TEXT_DEBUG   = "#2e3444"
+_MM_TEXT_WARN    = "#a07a2a"
+_MM_TEXT_ERROR   = "#b04050"
+_MM_TEXT_OK      = "#3d8a52"
+_MM_TEXT_TAG     = "#6a5da8"
 
 
 def _minimap_line_color(text: str) -> str:
-    if not text:
-        return _MM_TEXT_DEBUG
+    if not text: return _MM_TEXT_DEBUG
     low = text.lower()
 
-    if ("err_" in low
-            or "[error]" in low
-            or "\"error\"" in low
-            or "'error'" in low
-            or " fatal" in low
-            or " crashed" in low
-            or "failed:" in low
-            or " failed" in low):
+    if ("err_" in low or "[error]" in low or "\"error\"" in low or "'error'" in low
+            or " fatal" in low or " crashed" in low or "failed:" in low or " failed" in low):
         return _MM_TEXT_ERROR
-    if "[warn" in low:
-        return _MM_TEXT_WARN
-    if "success" in low or "loaded" in low or " ok " in f" {low} ":
-        return _MM_TEXT_OK
-    if "majestic:" in low or "(patcher)" in low or "(client)" in low:
-        return _MM_TEXT_TAG
-    if "[debug]" in low or "[trace]" in low:
-        return _MM_TEXT_DEBUG
+    if "[warn" in low: return _MM_TEXT_WARN
+    if "success" in low or "loaded" in low or " ok " in f" {low} ": return _MM_TEXT_OK
+    if "majestic:" in low or "(patcher)" in low or "(client)" in low: return _MM_TEXT_TAG
+    if "[debug]" in low or "[trace]" in low: return _MM_TEXT_DEBUG
     return _MM_TEXT_DEFAULT
 
 
 class MinimapWidget(QWidget):
-    """Sublime-style миникарта.
-
-    - Рисует реальные строки текста мелким шрифтом.
-    - Показывает окно ~N строк, которое плавно сдвигается вместе с
-      редактором: когда редактор в начале файла — миникарта в начале,
-      когда в конце — миникарта в конце.
-    - Прямоугольник вьюпорта тоже плавно едет сверху вниз.
-    - Клик/перетаскивание — навигация.
-    """
-
-    LINE_H = 4          # высота одной строки на миникарте
-    FONT_PX = 5         # размер шрифта миникарты
+    LINE_H = 4
+    FONT_PX = 5
     SIDE_MARGIN = 5
 
     def __init__(self, editor: "CodeEditor"):
@@ -210,6 +195,10 @@ class MinimapWidget(QWidget):
         self.setCursor(Qt.ArrowCursor)
         self._dragging = False
         self._drag_offset = 0.0
+        self._drag_mode = "none"  # "fast" или "jump"
+        self._drag_start_y = 0
+        self._drag_start_line = 0
+        self._drag_first_line = 0
 
         f = QFont()
         f.setStyleHint(QFont.Monospace)
@@ -221,7 +210,6 @@ class MinimapWidget(QWidget):
         editor.updateRequest.connect(lambda *_: self.update())
         editor.verticalScrollBar().valueChanged.connect(self.update)
 
-    # ── параметры окна миникарты ──
     def _lines_visible(self) -> int:
         return max(1, self.height() // self.LINE_H)
 
@@ -234,11 +222,6 @@ class MinimapWidget(QWidget):
         return max(1, self._editor.viewport().height() // lh)
 
     def _minimap_top_line(self) -> int:
-        """Верхняя строка, которую рисуем на миникарте.
-
-        Плавно едет от 0 (начало файла) до N - M (конец файла) в
-        зависимости от положения скролла редактора.
-        """
         N = self._editor.document().blockCount()
         M = self._lines_visible()
         E = self._editor_visible_lines()
@@ -249,19 +232,17 @@ class MinimapWidget(QWidget):
         top = int(round(ratio * (N - M)))
         return max(0, min(N - M, top))
 
-    # ── отрисовка ──
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, False)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
-        painter.fillRect(self.rect(), _MINIMAP_BG)
+        painter.fillRect(self.rect(), QColor("#0c0f16"))
 
         doc = self._editor.document()
         total = doc.blockCount()
         H = self.height()
         W = self.width()
-        if total == 0 or H <= 0 or W <= 0:
-            return
+        if total == 0 or H <= 0 or W <= 0: return
 
         first = self._minimap_top_line()
         last = min(total, first + self._lines_visible() + 1)
@@ -287,33 +268,40 @@ class MinimapWidget(QWidget):
             block = block.next()
             y += self.LINE_H
 
-        # прямоугольник вьюпорта — плавно едет сверху вниз
+        # Прямоугольник вьюпорта
         editor_first = self._editor_first_line()
         editor_vis = self._editor_visible_lines()
         vp_top = int((editor_first - first) * self.LINE_H)
         vp_h = max(6, editor_vis * self.LINE_H)
         vp_top = max(0, min(H - vp_h, vp_top))
-        painter.fillRect(QRect(0, vp_top, W, vp_h), _MINIMAP_VIEW)
-        painter.setPen(QPen(_MINIMAP_VIEW_B, 1))
+        
+        painter.fillRect(QRect(0, vp_top, W, vp_h), QColor(255, 255, 255, 22))
+        painter.setPen(QPen(QColor(255, 255, 255, 60), 1))
         painter.drawRect(QRect(0, vp_top, W - 1, max(0, vp_h - 1)))
 
-    # ── взаимодействие ──
     def mousePressEvent(self, event):
-        if event.button() != Qt.LeftButton:
-            return
+        if event.button() != Qt.LeftButton: return
         y = event.position().y() if hasattr(event, "position") else event.y()
 
-        first = self._minimap_top_line()
+        self._drag_first_line = self._minimap_top_line()
+
         editor_first = self._editor_first_line()
         editor_vis = self._editor_visible_lines()
-        vp_top = (editor_first - first) * self.LINE_H
+        vp_top = (editor_first - self._drag_first_line) * self.LINE_H
         vp_h = max(6, editor_vis * self.LINE_H)
 
         if vp_top <= y <= vp_top + vp_h:
+            # Кликнули по прямоугольнику — включаем быструю прокрутку
+            self._drag_mode = "fast"
             self._drag_offset = y - vp_top
+            self._drag_start_y = y
+            self._drag_start_line = editor_first
         else:
+            # Кликнули мимо — прыгаем точно в это место (1 к 1)
+            self._drag_mode = "jump"
             self._drag_offset = vp_h / 2.0
             self._scroll_to(y)
+            
         self._dragging = True
         self.setCursor(Qt.ClosedHandCursor)
 
@@ -324,28 +312,36 @@ class MinimapWidget(QWidget):
 
     def mouseReleaseEvent(self, _event):
         self._dragging = False
+        self._drag_mode = "none"
         self.setCursor(Qt.ArrowCursor)
 
     def _scroll_to(self, y: float):
-        """Прыжок в место миникарты, куда указывает клик/перетаскивание.
-
-        Мы вычисляем целевую верхнюю строку редактора через ту же самую
-        пропорцию, что и в _minimap_top_line (обратная функция).
-        """
         N = self._editor.document().blockCount()
         E = self._editor_visible_lines()
-        if N <= E:
-            return
-        H = self.height()
-        vp_h = max(6, E * self.LINE_H)
-        # куда должен встать верх прямоугольника
-        target_pixel = y - self._drag_offset
-        # максимум, куда может уехать прямоугольник
-        travel = max(1, H - vp_h)
-        ratio = max(0.0, min(1.0, target_pixel / travel))
-        target_line = int(round(ratio * (N - E)))
-        target_line = max(0, min(N - E, target_line))
-        self._editor.verticalScrollBar().setValue(target_line)
+        if N <= E: return
+        
+        vsb = self._editor.verticalScrollBar()
+
+        if self._drag_mode == "fast":
+            # Быстрая прокрутка пропорционально всему файлу
+            H = self.height()
+            span = N - E
+            
+            # Сколько пикселей нужно протащить, чтобы пройти весь файл
+            travel = max(1, H - max(6, E * self.LINE_H))
+            
+            dy = y - self._drag_start_y
+            delta_lines = int(dy / travel * span)
+            
+            target = self._drag_start_line + delta_lines
+            target = max(0, min(span, target))
+            vsb.setValue(target)
+            
+        else: # jump
+            target_pixel = y - self._drag_offset
+            target_line = self._drag_first_line + int(target_pixel / self.LINE_H)
+            target_line = max(0, min(N - E, target_line))
+            vsb.setValue(target_line)
 
 
 # ═══════════════════════════ Редактор ═══════════════════════════
@@ -371,23 +367,20 @@ class CodeEditor(QPlainTextEdit):
 
         self.blockCountChanged.connect(self._update_margins)
         self.updateRequest.connect(self._on_update_request)
-
         self._update_margins(0)
 
     def minimap_enabled(self) -> bool:
         return self._minimap_enabled
 
     def set_minimap_enabled(self, enabled: bool) -> None:
-        if enabled == self._minimap_enabled:
-            return
+        if enabled == self._minimap_enabled: return
         self._minimap_enabled = enabled
         self._minimap.setVisible(enabled)
         self._update_margins(0)
 
     def line_number_area_width(self) -> int:
         digits = max(3, len(str(max(1, self.blockCount()))))
-        space = 14 + self.fontMetrics().horizontalAdvance("9") * digits
-        return space
+        return 14 + self.fontMetrics().horizontalAdvance("9") * digits
 
     def _update_margins(self, _):
         right = self._minimap.width() if self._minimap_enabled else 0
@@ -397,10 +390,7 @@ class CodeEditor(QPlainTextEdit):
         if dy:
             self._line_number_area.scroll(0, dy)
         else:
-            self._line_number_area.update(
-                0, rect.y(),
-                self._line_number_area.width(), rect.height(),
-            )
+            self._line_number_area.update(0, rect.y(), self._line_number_area.width(), rect.height())
         if rect.contains(self.viewport().rect()):
             self._update_margins(0)
         if self._minimap_enabled:
@@ -409,33 +399,24 @@ class CodeEditor(QPlainTextEdit):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         cr = self.contentsRect()
-        self._line_number_area.setGeometry(
-            QRect(cr.left(), cr.top(),
-                  self.line_number_area_width(), cr.height())
-        )
+        self._line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
         if self._minimap_enabled:
             mw = self._minimap.width()
-            self._minimap.setGeometry(
-                QRect(cr.right() - mw + 1, cr.top(), mw, cr.height())
-            )
+            self._minimap.setGeometry(QRect(cr.right() - mw + 1, cr.top(), mw, cr.height()))
 
     def line_number_area_paint_event(self, event):
         painter = QPainter(self._line_number_area)
         painter.fillRect(event.rect(), QColor("#0c0f16"))
-
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
         bottom = top + self.blockBoundingRect(block).height()
         height = self.fontMetrics().height()
         width = self._line_number_area.width() - 8
-
         painter.setPen(QColor("#5b6376"))
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                painter.drawText(0, int(top), width, height,
-                                 Qt.AlignRight | Qt.AlignVCenter,
-                                 str(block_number + 1))
+                painter.drawText(0, int(top), width, height, Qt.AlignRight | Qt.AlignVCenter, str(block_number + 1))
             block = block.next()
             top = bottom
             bottom = top + self.blockBoundingRect(block).height()
@@ -449,41 +430,29 @@ class _FindBar(QWidget):
         super().__init__(dialog)
         self.editor = editor
         self.dialog = dialog
-
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
-
         self.edit = QLineEdit()
         self.edit.setPlaceholderText("Найти…")
-        self.edit.returnPressed.connect(self._on_return)
-
+        self.edit.returnPressed.connect(self.find_next)
         self.case_cb = QCheckBox("Aa")
-        self.case_cb.setToolTip("Учитывать регистр")
         self.case_cb.toggled.connect(self._refresh_highlight)
-
         self.info = QLabel("")
         self.info.setObjectName("DetailMeta")
         self.info.setMinimumWidth(80)
-
         self.btn_prev = QPushButton("◀")
         self.btn_prev.setObjectName("Ghost")
         self.btn_prev.setFixedWidth(34)
-        self.btn_prev.setToolTip("Предыдущее (Shift+Enter / Shift+F3)")
         self.btn_prev.clicked.connect(self.find_prev)
-
         self.btn_next = QPushButton("▶")
         self.btn_next.setObjectName("Ghost")
         self.btn_next.setFixedWidth(34)
-        self.btn_next.setToolTip("Следующее (Enter / F3)")
         self.btn_next.clicked.connect(self.find_next)
-
         self.btn_close = QPushButton("✕")
         self.btn_close.setObjectName("Ghost")
         self.btn_close.setFixedWidth(34)
-        self.btn_close.setToolTip("Закрыть (Esc)")
         self.btn_close.clicked.connect(self.hide_bar)
-
         lay.addWidget(QLabel("Поиск:"))
         lay.addWidget(self.edit, 1)
         lay.addWidget(self.case_cb)
@@ -491,11 +460,8 @@ class _FindBar(QWidget):
         lay.addWidget(self.btn_prev)
         lay.addWidget(self.btn_next)
         lay.addWidget(self.btn_close)
-
         self.edit.installEventFilter(self)
-        QShortcut(QKeySequence("Escape"), self,
-                  context=Qt.WidgetWithChildrenShortcut,
-                  activated=self.hide_bar)
+        QShortcut(QKeySequence("Escape"), self, context=Qt.WidgetWithChildrenShortcut, activated=self.hide_bar)
 
     def eventFilter(self, obj, event):
         if obj is self.edit and event.type() == event.Type.KeyPress:
@@ -507,15 +473,11 @@ class _FindBar(QWidget):
                 return True
         return super().eventFilter(obj, event)
 
-    def _on_return(self):
-        self.find_next()
-
     def open_bar(self, initial_text: str = ""):
         cursor = self.editor.textCursor()
         if cursor.hasSelection():
             sel = cursor.selectedText()
-            if sel and "\u2029" not in sel:
-                initial_text = sel
+            if sel and "\u2029" not in sel: initial_text = sel
         self.edit.setText(initial_text)
         self.edit.selectAll()
         self.show()
@@ -529,15 +491,11 @@ class _FindBar(QWidget):
 
     def _flags(self) -> QTextDocument.FindFlags:
         flags = QTextDocument.FindFlags()
-        if self.case_cb.isChecked():
-            flags |= QTextDocument.FindCaseSensitively
+        if self.case_cb.isChecked(): flags |= QTextDocument.FindCaseSensitively
         return flags
 
-    def find_next(self):
-        self._search(backward=False)
-
-    def find_prev(self):
-        self._search(backward=True)
+    def find_next(self): self._search(backward=False)
+    def find_prev(self): self._search(backward=True)
 
     def _search(self, backward: bool):
         text = self.edit.text()
@@ -546,20 +504,15 @@ class _FindBar(QWidget):
             self.info.setText("")
             return
         flags = self._flags()
-        if backward:
-            flags |= QTextDocument.FindBackward
+        if backward: flags |= QTextDocument.FindBackward
         found = self.editor.find(text, flags)
         if not found:
             cursor = self.editor.textCursor()
-            cursor.movePosition(
-                QTextCursor.End if backward else QTextCursor.Start
-            )
+            cursor.movePosition(QTextCursor.End if backward else QTextCursor.Start)
             self.editor.setTextCursor(cursor)
             found = self.editor.find(text, flags)
-        if found:
-            self.info.setText("")
-        else:
-            self.info.setText("Не найдено")
+        if found: self.info.setText("")
+        else: self.info.setText("Не найдено")
         self._refresh_highlight()
 
     def _refresh_highlight(self):
@@ -573,8 +526,7 @@ class _FindBar(QWidget):
         cursor.movePosition(QTextCursor.Start)
         while True:
             found = self.editor.document().find(text, cursor, flags)
-            if found.isNull():
-                break
+            if found.isNull(): break
             sel = QTextEdit.ExtraSelection()
             sel.cursor = found
             fmt = QTextCharFormat()
@@ -593,7 +545,7 @@ class FileViewerDialog(QDialog):
                  on_create_rule: Optional[Callable[[str], None]] = None):
         super().__init__(parent)
         self.setWindowTitle(f"Просмотр: {file_name}")
-        self.resize(1280, 820)
+        self.resize(1200, 800)
         self.setSizeGripEnabled(True)
         self._on_create_rule = on_create_rule
 
@@ -607,16 +559,6 @@ class FileViewerDialog(QDialog):
         fname.setObjectName("DetailTitle")
         head.addWidget(fname)
         head.addStretch(1)
-
-        self.chk_minimap = QCheckBox("Миникарта")
-        self.chk_minimap.setChecked(True)
-        self.chk_minimap.setToolTip(
-            "Показать мини-обзор файла справа. "
-            "Выключите, чтобы вернуть обычный вертикальный ползунок."
-        )
-        head.addWidget(self.chk_minimap)
-        head.addSpacing(12)
-
         pos_label = QLabel(f"позиция: {pos}")
         pos_label.setObjectName("DetailMeta")
         head.addWidget(pos_label)
@@ -636,20 +578,21 @@ class FileViewerDialog(QDialog):
             " selection-color: #ffffff;"
             "}"
         )
-        # Отключаем перерисовку на время парсинга — на 30-мегабайтном логе
-        # это экономит около секунды.
+        
+        self.editor.setUndoRedoEnabled(False)
         self.editor.setUpdatesEnabled(False)
         self.editor.setPlainText(content)
         self.editor.setUpdatesEnabled(True)
         v.addWidget(self.editor, 1)
 
-        # Подсветку подключим отложенно — уже после показа диалога.
-        # QSyntaxHighlighter при attach() прогоняет все блоки через regex,
-        # а это на большом файле самый дорогой шаг. Так окно появляется
-        # мгновенно, а подсветка «дорисовывается» следом.
         self._highlighter = None
+        self._content_size = len(content)
 
+        self.chk_minimap = QCheckBox("Миникарта")
+        self.chk_minimap.setChecked(True)
         self.chk_minimap.toggled.connect(self.editor.set_minimap_enabled)
+        head.addWidget(self.chk_minimap)
+        head.addSpacing(12)
 
         self.find_bar = _FindBar(self.editor, self)
         self.find_bar.hide()
@@ -665,8 +608,7 @@ class FileViewerDialog(QDialog):
         btn_jump.clicked.connect(lambda: self._jump(pos, length))
 
         if on_create_rule is not None:
-            btn_new = bb.addButton("Создать правило из выделения",
-                                   QDialogButtonBox.ActionRole)
+            btn_new = bb.addButton("Создать правило из выделения", QDialogButtonBox.ActionRole)
             btn_new.setObjectName("Primary")
             btn_new.clicked.connect(self._create_rule_from_selection)
 
@@ -674,53 +616,44 @@ class FileViewerDialog(QDialog):
         btn_close.setObjectName("Primary")
         bb.rejected.connect(self.reject)
 
-        info_text = ("Подсвечено место, где сработала сигнатура. "
-                     "Ctrl+F — поиск, F3/Shift+F3 — вперёд/назад.")
+        info_text = "Подсвечено место, где сработала сигнатура. Ctrl+F — поиск, F3/Shift+F3 — вперёд/назад."
         if on_create_rule is not None:
-            info_text += (" Выделите нужный фрагмент и нажмите "
-                          "«Создать правило из выделения».")
+            info_text += " Выделите нужный фрагмент и нажмите «Создать правило из выделения»."
         info = QLabel(info_text)
         info.setObjectName("DetailMeta")
         info.setWordWrap(True)
         v.addWidget(info)
         v.addWidget(bb)
 
-        QShortcut(QKeySequence("Ctrl+F"), self,
-                  context=Qt.WindowShortcut,
-                  activated=self._open_find_bar)
-        QShortcut(QKeySequence("F3"), self,
-                  context=Qt.WindowShortcut,
-                  activated=self.find_bar.find_next)
-        QShortcut(QKeySequence("Shift+F3"), self,
-                  context=Qt.WindowShortcut,
-                  activated=self.find_bar.find_prev)
+        QShortcut(QKeySequence("Ctrl+F"), self, context=Qt.WindowShortcut, activated=self._open_find_bar)
+        QShortcut(QKeySequence("F3"), self, context=Qt.WindowShortcut, activated=self.find_bar.find_next)
+        QShortcut(QKeySequence("Shift+F3"), self, context=Qt.WindowShortcut, activated=self.find_bar.find_prev)
 
         self._base_selections: list[QTextEdit.ExtraSelection] = []
         self._find_selections: list[QTextEdit.ExtraSelection] = []
 
         self._pos = pos
         self._len = length
-        QTimer.singleShot(0, lambda: self._jump(pos, length))
+        if pos > 0:
+            QTimer.singleShot(0, lambda: self._jump(pos, length))
+        else:
+            self.editor.moveCursor(QTextCursor.Start)
+
+    def _attach_highlighter(self):
+        if self._highlighter is None:
+            self._highlighter = MajesticLogHighlighter(self.editor.document())
 
     def set_find_selections(self, sels: list[QTextEdit.ExtraSelection]):
         self._find_selections = sels
         self._apply_extra_selections()
 
     def _apply_extra_selections(self):
-        self.editor.setExtraSelections(
-            self._base_selections + self._find_selections
-        )
+        self.editor.setExtraSelections(self._base_selections + self._find_selections)
 
     def _open_find_bar(self):
         self.find_bar.open_bar()
 
-    def _attach_highlighter(self):
-        if self._highlighter is None:
-            self._highlighter = MajesticLogHighlighter(self.editor.document())
-
     def _jump(self, pos: int, length: int):
-        # characterCount() возвращает длину + 1 (завершающий \0).
-        # В отличие от toPlainText(), этот вызов не создаёт копию строки.
         doc_len = max(0, self.editor.document().characterCount() - 1)
         start = max(0, min(pos, doc_len))
         end = max(start, min(pos + max(length, 1), doc_len))
@@ -741,8 +674,7 @@ class FileViewerDialog(QDialog):
         self.editor.setFocus()
 
     def _create_rule_from_selection(self):
-        if not self._on_create_rule:
-            return
+        if not self._on_create_rule: return
         cursor = self.editor.textCursor()
         if cursor.hasSelection():
             text = cursor.selectedText().replace("\u2029", "\n")
@@ -758,8 +690,7 @@ class FileViewerDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         apply_dark_title_bar(self)
-        # Диалог уже виден — можно спокойно запускать regex-обработку.
-        QTimer.singleShot(80, self._attach_highlighter)
+        QTimer.singleShot(100, self._attach_highlighter)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.find_bar.isVisible():

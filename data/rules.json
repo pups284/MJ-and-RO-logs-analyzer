@@ -443,7 +443,7 @@
   {
     "id": "sys-fileload",
     "name": "Клиент: отсутствует файл ресурсов",
-    "log_type": "any",
+    "log_type": "client",
     "severity": "error",
     "category": "Клиент",
     "enabled": true,

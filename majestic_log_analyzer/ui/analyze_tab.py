@@ -330,8 +330,9 @@ class AnalyzeTab(QWidget):
         if not valid:
             return
 
-        added = 0
+        target_name = None
         skipped: list[tuple[str, str]] = []
+
         for p in valid:
             try:
                 text = Path(p).read_text(encoding="utf-8", errors="replace")
@@ -340,15 +341,42 @@ class AnalyzeTab(QWidget):
                 continue
             name = Path(p).name
             meta = extract_metadata(name, text)
-            self.app.files = [f for f in self.app.files if f.name != name]
-            self.app.files.append(LoadedFile(
-                name=name, content=text, path=Path(p), metadata=meta,
-            ))
-            added += 1
+            
+            # Проверяем, есть ли уже такой файл в списке
+            existing = next((f for f in self.app.files if f.name == name), None)
+            
+            if existing:
+                # Если файл уже загружен — обновляем его данные "на месте",
+                # чтобы он не прыгал вниз списка
+                existing.content = text
+                existing.path = Path(p)
+                existing.metadata = meta
+            else:
+                # Если файла нет — добавляем в конец
+                self.app.files.append(LoadedFile(
+                    name=name, content=text, path=Path(p), metadata=meta,
+                ))
+            
+            # Запоминаем имя, чтобы в конце выделить именно его
+            target_name = name
 
         self.refresh_files()
-        if added:
+
+        # Выделяем последний обработанный файл (фокус)
+        if target_name:
+            self.files_list.blockSignals(True)
+            for i in range(self.files_list.count()):
+                if self.files_list.item(i).data(Qt.UserRole) == target_name:
+                    self.files_list.setCurrentRow(i)
+                    break
+            self.files_list.blockSignals(False)
+            self._update_file_info()
+
+        # Перезапускаем анализ (даже если файлов не прибавилось, 
+        # содержимое могло обновиться)
+        if valid:
             self.run_analysis()
+            
         if skipped:
             msg = "\n".join(f"{p}: {err}" for p, err in skipped[:5])
             QMessageBox.warning(self, "Некоторые файлы пропущены", msg)
