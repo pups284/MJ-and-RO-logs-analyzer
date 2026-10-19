@@ -9,6 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/PySide6-6.6%2B-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
 [![Платформа](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)]()
+[![Скачать установщик](https://img.shields.io/badge/Download-Setup.exe-brightgreen)](https://github.com/pups284/MJ-and-RO-logs-analyzer/releases/latest/download/MajesticLogAnalyzerSetup.exe)
 
 </div>
 
