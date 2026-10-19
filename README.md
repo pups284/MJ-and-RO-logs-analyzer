@@ -54,3 +54,8 @@ python -m venv .venv
 
 pip install -r requirements.txt
 python main.py
+
+```
+## 💬 Связь и поддержка
+
+Если возникли вопросы, предложения или нашли баг — пишите в Discord: **`pups284`**
