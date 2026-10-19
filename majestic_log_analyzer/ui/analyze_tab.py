@@ -15,15 +15,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..analysis import analyze, find_duplicate_note
-from ..discord_import import cleanup_discord_files
 from ..log_metadata import extract_metadata, format_metadata, short_metadata_tag
 from ..models import Finding, LoadedFile, Note
 from ..normalization import detect_log_type
 from ..storage import save_notes, save_rules
 from ..style import SEV_COLORS, SEV_MARKS
 from .common import section_label
-from .discord_dialog import DiscordImportDialog
-from .file_viewer import FileViewerDialog
+from .file_viewer import FileViewerWindow
 from .note_dialog import NoteDialog
 from .rule_from_selection import RuleFromSelectionDialog
 
@@ -54,6 +52,7 @@ class AnalyzeTab(QWidget):
         self.app = app
         self.current: Optional[Finding] = None
         self._initialized = False
+        self._viewer_windows = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -62,13 +61,9 @@ class AnalyzeTab(QWidget):
         # ── Верхняя панель ──
         top = QHBoxLayout()
         top.setSpacing(8)
-        btn_load = QPushButton("Загрузить логи…")
-        btn_load.setObjectName("Primary")
-        btn_load.clicked.connect(self.load_files)
-
-        btn_discord = QPushButton("Импорт из Discord…")
-        btn_discord.setObjectName("Primary")
-        btn_discord.clicked.connect(self.import_from_discord)
+        self.btn_load = QPushButton("Загрузить логи…")
+        self.btn_load.setObjectName("Primary")
+        self.btn_load.clicked.connect(self.load_files)
 
         btn_clear = QPushButton("Очистить")
         btn_clear.setObjectName("Ghost")
@@ -78,8 +73,7 @@ class AnalyzeTab(QWidget):
         btn_again.setObjectName("Ghost")
         btn_again.clicked.connect(self.run_analysis)
 
-        top.addWidget(btn_load)
-        top.addWidget(btn_discord)
+        top.addWidget(self.btn_load)
         top.addWidget(btn_clear)
         top.addWidget(btn_again)
         top.addStretch(1)
@@ -100,21 +94,13 @@ class AnalyzeTab(QWidget):
         self.files_list.itemSelectionChanged.connect(self._on_file_selected)
         self.files_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.files_list.customContextMenuRequested.connect(self._files_context_menu)
+        self.files_list.itemDoubleClicked.connect(self._on_file_double_clicked)
         lv.addWidget(self.files_list, 1)
 
         self.file_info = QLabel("")
         self.file_info.setObjectName("FileInfo")
         self.file_info.setWordWrap(True)
         self.file_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.file_info.setStyleSheet(
-            "QLabel#FileInfo {"
-            " background: #0c0f16;"
-            " border: 1px solid #222738;"
-            " border-radius: 8px;"
-            " padding: 8px 10px;"
-            " color: #cfd5e3;"
-            "}"
-        )
         self.file_info.setMinimumHeight(60)
         lv.addWidget(self.file_info)
 
@@ -381,38 +367,11 @@ class AnalyzeTab(QWidget):
             msg = "\n".join(f"{p}: {err}" for p, err in skipped[:5])
             QMessageBox.warning(self, "Некоторые файлы пропущены", msg)
 
-    def add_discord_files(self, items: list[tuple[Path, str]]):
-        added = 0
-        for path, original_name in items:
-            try:
-                text = Path(path).read_text(encoding="utf-8", errors="replace")
-            except Exception as e:
-                QMessageBox.warning(
-                    self, "Ошибка чтения",
-                    f"Не удалось прочитать {original_name}:\n{e}"
-                )
-                continue
-            meta = extract_metadata(original_name, text)
-            self.app.files = [f for f in self.app.files if f.name != original_name]
-            self.app.files.append(LoadedFile(
-                name=original_name, content=text,
-                path=Path(path), from_discord=True, metadata=meta,
-            ))
-            added += 1
-        self.refresh_files()
-        if added:
-            self.run_analysis()
-
-    def import_from_discord(self):
-        dlg = DiscordImportDialog(self)
-        if dlg.exec() != QDialog.Accepted or not dlg.downloaded:
-            return
-        items = [(Path(p), name) for p, name in dlg.downloaded]
-        self.add_discord_files(items)
-
     def clear_files(self):
-        discord_paths = [f.path for f in self.app.files if f.from_discord and f.path]
-        removed = cleanup_discord_files(discord_paths)
+        for win in list(self._viewer_windows.values()):
+            win.close()
+        self._viewer_windows.clear()
+
         self.app.files = []
         self.app.findings = []
         self.refresh_files()
@@ -420,14 +379,6 @@ class AnalyzeTab(QWidget):
         self.refresh_hidden()
         self._clear_details()
         self.app.update_status()
-        if removed:
-            self.app.statusBar().showMessage(
-                f"Очищено. Удалено временных файлов: {removed}", 4000
-            )
-
-    def cleanup_discord_files(self) -> int:
-        paths = [f.path for f in self.app.files if f.from_discord and f.path]
-        return cleanup_discord_files(paths)
 
     def _selected_file_name(self) -> Optional[str]:
         items = self.files_list.selectedItems()
@@ -442,8 +393,6 @@ class AnalyzeTab(QWidget):
         for lf in self.app.files:
             tag = detect_log_type(lf.name)
             parts = [f"{lf.name}   [{tag}]"]
-            if lf.from_discord:
-                parts.append("Discord")
             meta_tag = short_metadata_tag(lf.metadata or {})
             if meta_tag:
                 parts.append(meta_tag)
@@ -479,6 +428,12 @@ class AnalyzeTab(QWidget):
         self.refresh_table()
         self.refresh_hidden()
         self._update_file_info()
+
+    def _on_file_double_clicked(self, item):
+        name = item.data(Qt.UserRole)
+        lf = next((f for f in self.app.files if f.name == name), None)
+        if lf:
+            self._open_file_in_editor(lf)
 
     # ───────── Контекстное меню файла ─────────
     def _files_context_menu(self, pos):
@@ -532,10 +487,7 @@ class AnalyzeTab(QWidget):
                                 f"Не удалось открыть проводник:\n{e}")
 
     def _open_file_in_editor(self, lf: LoadedFile):
-        FileViewerDialog(
-            self, lf.name, lf.content, 0, 0,
-            on_create_rule=self._create_rule_from_text,
-        ).exec()
+        self._show_viewer(lf.name, lf.content, 0, 0)
 
     def _remove_file(self, lf: LoadedFile):
         if QMessageBox.question(
@@ -543,11 +495,12 @@ class AnalyzeTab(QWidget):
             f"Убрать «{lf.name}» из списка?"
         ) != QMessageBox.Yes:
             return
-        if lf.from_discord and lf.path:
-            try:
-                cleanup_discord_files([lf.path])
-            except Exception:
-                pass
+
+        # Закрываем редактор, если он открыт
+        if lf.name in self._viewer_windows:
+            win = self._viewer_windows.pop(lf.name)
+            win.close()
+                
         self.app.files = [f for f in self.app.files if f is not lf]
         if self.current and self.current.file_name == lf.name:
             self._clear_details()
@@ -719,10 +672,29 @@ class AnalyzeTab(QWidget):
                                 "Файл не найден среди загруженных.")
             return
 
-        FileViewerDialog(
-            self, file_name, content, pos, length,
+        self._show_viewer(file_name, content, pos, length)
+
+    def _show_viewer(self, file_name: str, content: str, pos: int, length: int):
+        if file_name in self._viewer_windows:
+            win = self._viewer_windows[file_name]
+            if win.isMinimized():
+                win.showNormal()
+            win.raise_()
+            win.activateWindow()
+            if pos > 0:
+                win._jump(pos, length)
+            return
+
+        # Убрали self из аргументов!
+        win = FileViewerWindow(
+            file_name, content, pos, length,
             on_create_rule=self._create_rule_from_text,
-        ).exec()
+        )
+        win.setAttribute(Qt.WA_DeleteOnClose)
+        win.destroyed.connect(lambda: self._viewer_windows.pop(file_name, None))
+        
+        self._viewer_windows[file_name] = win
+        win.show()
 
     def _create_rule_from_text(self, text: str):
         dlg = RuleFromSelectionDialog(self, text)
