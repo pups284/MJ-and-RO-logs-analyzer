@@ -288,7 +288,7 @@ class MinimapWidget(QWidget):
 # ═══════════════════════════ Ленивый редактор ═══════════════════════════
 
 class LazyLogEditor(QPlainTextEdit):
-    CHUNK_SIZE = 5000
+    CHUNK_SIZE = 20000
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -328,21 +328,30 @@ class LazyLogEditor(QPlainTextEdit):
             return
             
         sb = self.verticalScrollBar()
-        if value == sb.maximum() and self._loaded_end < len(self._all_lines):
-            self._is_loading = True
-            try:
-                next_start = self._loaded_end
-                next_end = min(len(self._all_lines), next_start + self.CHUNK_SIZE)
-                
-                cursor = self.textCursor()
-                cursor.movePosition(QTextCursor.End)
-                
-                chunk_text = "\n" + "\n".join(self._all_lines[next_start:next_end])
-                cursor.insertText(chunk_text)
-                
-                self._loaded_end = next_end
-            finally:
-                self._is_loading = False
+        if value >= sb.maximum() - 100 and self._loaded_end < len(self._all_lines):
+            self._load_next_chunk()
+
+    def _load_next_chunk(self):
+        self._is_loading = True
+        try:
+            sb = self.verticalScrollBar()
+            was_at_bottom = (sb.value() >= sb.maximum() - 20)
+            
+            next_start = self._loaded_end
+            next_end = min(len(self._all_lines), next_start + self.CHUNK_SIZE)
+            
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            
+            chunk_text = "\n" + "\n".join(self._all_lines[next_start:next_end])
+            cursor.insertText(chunk_text)
+            
+            self._loaded_end = next_end
+            
+            if was_at_bottom:
+                sb.setValue(sb.maximum())
+        finally:
+            self._is_loading = False
 
 
 # ═══════════════════════════ Редактор с номерами строк ═══════════════════════════
