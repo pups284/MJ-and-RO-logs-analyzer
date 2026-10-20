@@ -10,8 +10,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit,
-    QVBoxLayout, QWidget
+    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit,
+    QVBoxLayout, QWidget, QMainWindow
 )
 
 from ..platform_win import apply_dark_title_bar
@@ -113,7 +113,7 @@ class MajesticLogHighlighter(QSyntaxHighlighter):
                 m = it.next(); self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_server)
 
 
-# ═══════════════════════════ Миникарта (Полоски) ═══════════════════════════
+# ═══════════════════════════ Миникарта ═══════════════════════════
 
 def _minimap_line_color(text: str) -> str:
     if not text: return "#2e3444"
@@ -285,7 +285,67 @@ class MinimapWidget(QWidget):
             vsb.setValue(target_line)
 
 
-# ═══════════════════════════ Редактор ═══════════════════════════
+# ═══════════════════════════ Ленивый редактор ═══════════════════════════
+
+class LazyLogEditor(QPlainTextEdit):
+    CHUNK_SIZE = 5000
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._all_lines = []
+        self._loaded_start = 0
+        self._loaded_end = 0
+        self._is_loading = False
+
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll)
+        self.setReadOnly(True)
+        self.setLineWrapMode(QPlainTextEdit.NoWrap)
+
+    def load_lines(self, lines: list[str]):
+        self._all_lines = lines
+        self._loaded_start = 0
+        self._loaded_end = min(len(lines), self.CHUNK_SIZE)
+        
+        self.setPlainText("\n".join(lines[self._loaded_start:self._loaded_end]))
+        self.moveCursor(QTextCursor.Start)
+
+    def ensure_loaded_up_to(self, char_pos: int):
+        current_len = len(self.toPlainText())
+        while current_len <= char_pos and self._loaded_end < len(self._all_lines):
+            next_start = self._loaded_end
+            next_end = min(len(self._all_lines), next_start + self.CHUNK_SIZE)
+            chunk_text = "\n" + "\n".join(self._all_lines[next_start:next_end])
+            
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            cursor.insertText(chunk_text)
+            
+            self._loaded_end = next_end
+            current_len = len(self.toPlainText())
+
+    def _on_scroll(self, value):
+        if self._is_loading:
+            return
+            
+        sb = self.verticalScrollBar()
+        if value == sb.maximum() and self._loaded_end < len(self._all_lines):
+            self._is_loading = True
+            try:
+                next_start = self._loaded_end
+                next_end = min(len(self._all_lines), next_start + self.CHUNK_SIZE)
+                
+                cursor = self.textCursor()
+                cursor.movePosition(QTextCursor.End)
+                
+                chunk_text = "\n" + "\n".join(self._all_lines[next_start:next_end])
+                cursor.insertText(chunk_text)
+                
+                self._loaded_end = next_end
+            finally:
+                self._is_loading = False
+
+
+# ═══════════════════════════ Редактор с номерами строк ═══════════════════════════
 
 class _LineNumberArea(QWidget):
     def __init__(self, editor: "CodeEditor"):
@@ -299,7 +359,7 @@ class _LineNumberArea(QWidget):
         self._editor.line_number_area_paint_event(event)
 
 
-class CodeEditor(QPlainTextEdit):
+class CodeEditor(LazyLogEditor):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._line_number_area = _LineNumberArea(self)
@@ -371,7 +431,7 @@ class CodeEditor(QPlainTextEdit):
 # ═══════════════════════════ Панель поиска ═══════════════════════════
 
 class _FindBar(QWidget):
-    def __init__(self, editor: CodeEditor, dialog: "FileViewerDialog"):
+    def __init__(self, editor: CodeEditor, dialog: "FileViewerWindow"):
         super().__init__(dialog)
         self.editor = editor
         self.dialog = dialog
@@ -483,6 +543,9 @@ class _FindBar(QWidget):
             cursor = found
         self.dialog.set_find_selections(sels)
 
+
+# ═══════════════════════════ Окно редактора ═══════════════════════════
+
 class FileViewerWindow(QMainWindow):
     def __init__(self, file_name: str, content: str, pos: int, length: int,
                  on_create_rule: Optional[Callable[[str], None]] = None):
@@ -512,21 +575,17 @@ class FileViewerWindow(QMainWindow):
 
         self.editor = CodeEditor()
         self.editor.setObjectName("FileViewerText")
-        self.editor.setReadOnly(True)
-        self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.editor.setFont(_pick_mono_font())
         self.editor.setUndoRedoEnabled(False)
         
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        self.editor.setUpdatesEnabled(False)
-        self.editor.setPlainText(content)
-        self.editor.setUpdatesEnabled(True)
+        lines = content.splitlines()
+        self.editor.load_lines(lines)
         QApplication.restoreOverrideCursor()
 
         v.addWidget(self.editor, 1)
 
         self._highlighter = None
-        self._content_size = len(content)
 
         self.chk_minimap = QCheckBox("Миникарта")
         self.chk_minimap.setChecked(True)
@@ -575,7 +634,7 @@ class FileViewerWindow(QMainWindow):
         self._pos = pos
         self._len = length
         if pos > 0:
-            QTimer.singleShot(0, lambda: self._jump(pos, length))
+            QTimer.singleShot(100, lambda: self._jump(pos, length))
         else:
             self.editor.moveCursor(QTextCursor.Start)
 
@@ -594,6 +653,8 @@ class FileViewerWindow(QMainWindow):
         self.find_bar.open_bar()
 
     def _jump(self, pos: int, length: int):
+        self.editor.ensure_loaded_up_to(pos)
+        
         doc_len = max(0, self.editor.document().characterCount() - 1)
         start = max(0, min(pos, doc_len))
         end = max(start, min(pos + max(length, 1), doc_len))
