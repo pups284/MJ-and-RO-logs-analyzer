@@ -62,9 +62,9 @@ class GitHubSync(QObject):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(
-            lambda: self._fail("Превышено время ожидания ответа от GitHub (15 сек).")
+            lambda: self._fail("Превышено время ожидания ответа от GitHub (30 сек).")
         )
-        self.timer.start(15000)
+        self.timer.start(30000)
 
     def start(self) -> None:
         if self.target == "rules":
