@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QHBoxLayout, QLabel, QLineEdit,
+    QAbstractItemView, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
     QProgressDialog, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
 from ..github_sync import GitHubSync
 from ..models import Note
-from ..storage import load_notes, save_notes, save_rules
+from ..storage import load_notes, save_notes
 from .common import section_label
 
 if TYPE_CHECKING:

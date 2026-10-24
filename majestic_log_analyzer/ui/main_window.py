@@ -50,13 +50,11 @@ class TutorialOverlay(QWidget):
         r = self.rect_to_highlight
         w, h = self.width(), self.height()
 
-        # Затемняем 4 стороны вокруг выделения, оставляя "дырку"
-        painter.fillRect(0, 0, w, r.top(), dim_color)  # Top
-        painter.fillRect(0, r.bottom(), w, h - r.bottom(), dim_color)  # Bottom
-        painter.fillRect(0, r.top(), r.left(), r.height(), dim_color)  # Left
-        painter.fillRect(r.right(), r.top(), w - r.right(), r.height(), dim_color)  # Right
+        painter.fillRect(0, 0, w, r.top(), dim_color)
+        painter.fillRect(0, r.bottom(), w, h - r.bottom(), dim_color)
+        painter.fillRect(0, r.top(), r.left(), r.height(), dim_color)
+        painter.fillRect(r.right(), r.top(), w - r.right(), r.height(), dim_color)
 
-        # Синяя рамка
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor("#6d5cff"), 2))
         painter.setBrush(Qt.NoBrush)
@@ -219,14 +217,11 @@ class MainWindow(QMainWindow):
                 py = global_pos.y() + rect.height() + 15
 
                 screen = QApplication.primaryScreen().availableGeometry()
-                
-                # Если не влезает снизу — ставим сверху
+
                 if py + self.popup.height() > screen.bottom():
                     py = global_pos.y() - self.popup.height() - 15
-                # Если не влезает сверху — прижимаем к верху экрана
                 if py < screen.top():
                     py = screen.top() + 15
-                # Если не влезает справа — прижимаем к правому краю
                 if px + self.popup.width() > screen.right():
                     px = screen.right() - self.popup.width() - 15
 
@@ -332,8 +327,5 @@ class MainWindow(QMainWindow):
         apply_dark_title_bar(self)
 
     def closeEvent(self, event):
-        # Закрываем все открытые окна редактора
-        for win in list(self.analyze_tab._viewer_windows.values()):
-            win.close()
-            
+        self.analyze_tab.close_all_viewers()
         super().closeEvent(event)

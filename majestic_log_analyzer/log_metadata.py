@@ -2,15 +2,9 @@ from __future__ import annotations
 
 import re
 
-# main.log:
-#   gtaPlatform: 'steam',
-#   gtaPath: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Grand Theft Auto V',
 _RE_PLATFORM = re.compile(r"gtaPlatform:\s*'([^']+)'")
 _RE_GTA_PATH = re.compile(r"gtaPath:\s*'([^']+)'")
 
-# client.log:
-#   [20:42:40.315][hooks] Game path: D:\GTAV
-#   [20:42:27.001] Connect id: ro2
 _RE_GAME_PATH = re.compile(r"Game\s+path\s*[:=]\s*(.+?)(?:\r?\n|$)", re.I)
 _RE_CONNECT_ID = re.compile(r"Connect\s+id\s*[:=]\s*(ro|ru)\s*(\d+)", re.I)
 
@@ -24,8 +18,6 @@ PLATFORM_LABELS = {
 
 
 def _unescape_win_path(p: str) -> str:
-    """В main.log пути в одинарных кавычках с двойными бэкслэшами
-    (это JSON-строка внутри лога). Разуплотняем '\\\\' → '\\'."""
     return p.replace("\\\\", "\\")
 
 
@@ -51,8 +43,6 @@ def extract_main_metadata(content: str) -> dict:
 
 
 def detect_project(content: str) -> str | None:
-    """Возвращает 'ro' (Россия Онлайн) или 'majestic' (Majestic RP),
-    либо None, если строки Connect id нет."""
     m = _RE_CONNECT_ID.search(content)
     if not m:
         return None
@@ -84,7 +74,6 @@ def extract_metadata(file_name: str, content: str) -> dict:
 
 
 def format_metadata(meta: dict) -> str:
-    """Человекочитаемое представление для UI и тултипов."""
     if not meta:
         return ""
     lines: list[str] = []
@@ -100,7 +89,6 @@ def format_metadata(meta: dict) -> str:
 
 
 def short_metadata_tag(meta: dict) -> str:
-    """Короткий суффикс для строки в списке файлов."""
     if not meta:
         return ""
     if meta.get("gta_platform_label"):

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclass
@@ -30,9 +34,9 @@ class Rule:
     @classmethod
     def from_dict(cls, d: dict) -> "Rule":
         expected: list[int] = []
-        for x in (d.get("count_expected") or []):
+        for value in d.get("count_expected") or []:
             try:
-                expected.append(int(x))
+                expected.append(int(value))
             except (TypeError, ValueError):
                 pass
         try:
@@ -90,7 +94,6 @@ class Note:
     title: str = ""
     comment: str = ""
     preview: str = ""
-    match_pattern: str = ""
     created_at: str = ""
 
     @classmethod
@@ -106,8 +109,7 @@ class Note:
             title=d.get("title", ""),
             comment=d.get("comment", ""),
             preview=d.get("preview", ""),
-            match_pattern=d.get("match_pattern", "") or "",
-            created_at=d.get("created_at") or datetime.utcnow().isoformat() + "Z",
+            created_at=d.get("created_at") or utc_now_iso(),
         )
 
     def to_dict(self) -> dict:
@@ -119,7 +121,6 @@ class Note:
             "title": self.title,
             "comment": self.comment,
             "preview": self.preview,
-            "match_pattern": self.match_pattern,
             "created_at": self.created_at,
         }
 
@@ -156,5 +157,4 @@ class LoadedFile:
     name: str
     content: str
     path: Optional[Path] = None
-    from_discord: bool = False
     metadata: dict = field(default_factory=dict)

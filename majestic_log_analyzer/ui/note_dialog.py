@@ -1,24 +1,20 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
+    QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
     QLineEdit, QPlainTextEdit, QTextEdit, QVBoxLayout,
 )
 
-from ..models import Finding, Note
+from ..models import Finding, Note, utc_now_iso
 from ..platform_win import apply_dark_title_bar
 from .common import section_label
 
 
 class NoteDialog(QDialog):
-    """Создаёт новую заметку (если передан finding) или редактирует
-    существующую (если передан existing)."""
-
     def __init__(
         self,
         parent,
@@ -38,7 +34,6 @@ class NoteDialog(QDialog):
             self.setWindowIcon(app.windowIcon())
         self.resize(640, 580)
 
-        # Что показывать как контекст
         if existing:
             rule_id = existing.rule_id
             signature = existing.signature
@@ -91,7 +86,6 @@ class NoteDialog(QDialog):
         bb.rejected.connect(self.reject)
         v.addWidget(bb)
 
-        # Предзаполнение при редактировании
         if existing:
             idx = self.kind_cb.findData(existing.kind)
             if idx >= 0:
@@ -106,7 +100,6 @@ class NoteDialog(QDialog):
         title = self.title_edit.text().strip()
 
         if self.existing:
-            # Обновляем существующую заметку на месте
             self.existing.kind = kind
             self.existing.title = title or self.existing.title
             self.existing.comment = self.comment.toPlainText()
@@ -125,7 +118,7 @@ class NoteDialog(QDialog):
                 title=fallback_title,
                 comment=self.comment.toPlainText(),
                 preview=self.finding.context[:400],
-                created_at=datetime.utcnow().isoformat() + "Z",
+                created_at=utc_now_iso(),
             )
         super().accept()
 

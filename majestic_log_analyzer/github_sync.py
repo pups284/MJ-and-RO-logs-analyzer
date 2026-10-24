@@ -87,7 +87,6 @@ class GitHubSync(QObject):
             return
 
         if reply.error() != QNetworkReply.NetworkError.NoError:
-            # Если exceptions.json нет на GitHub — подтягиваем notes.json (совместимость)
             if filename == "exceptions.json" and reply.error() == QNetworkReply.NetworkError.ContentNotFoundError:
                 reply.deleteLater()
                 if reply in self.replies:
@@ -123,7 +122,6 @@ class GitHubSync(QObject):
                 self.finished.emit(True, "", final_rules, self.current_notes)
 
             elif self.target == "notes":
-                # Тянем ТОЛЬКО примечания
                 remote_dicts = self.remote_data.get("notes.json", [])
                 remote_notes = [Note.from_dict(n) for n in remote_dicts if n.get("kind") != "ignore"]
                 
@@ -134,7 +132,6 @@ class GitHubSync(QObject):
                 self.finished.emit(True, "", self.current_rules, merged_notes + local_exceptions)
 
             elif self.target == "exceptions":
-                # Тянем ТОЛЬКО исключения
                 remote_dicts = self.remote_data.get("exceptions.json", [])
                 if not remote_dicts and "notes.json" in self.remote_data:
                     remote_dicts = [n for n in self.remote_data["notes.json"] if n.get("kind") == "ignore"]

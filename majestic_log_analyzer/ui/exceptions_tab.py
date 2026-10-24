@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..github_sync import GitHubSync
-from ..storage import load_notes, save_notes, save_rules
+from ..storage import load_notes, save_notes
 
 if TYPE_CHECKING:
     from .main_window import MainWindow

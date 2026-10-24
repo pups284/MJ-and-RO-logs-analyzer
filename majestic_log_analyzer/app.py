@@ -4,7 +4,7 @@ import sys
 import ctypes
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
@@ -18,7 +18,6 @@ SERVER_NAME = "MajesticLogAnalyzer_SingleInstance"
 
 
 def _send_to_existing(paths: list[str]) -> bool:
-    """Отправляет пути уже запущенному экземпляру. Возвращает True, если он есть."""
     socket = QLocalSocket()
     socket.connectToServer(SERVER_NAME)
     if not socket.waitForConnected(300):
@@ -30,7 +29,7 @@ def _send_to_existing(paths: list[str]) -> bool:
         except Exception:
             pass
 
-    payload = b"\0".join(p.encode("utf-8") for p in paths if p)
+    payload = b"\0".join(p.encode("utf-8") for p in paths if p) or b"\0"
     socket.write(payload)
     socket.flush()
     socket.waitForBytesWritten(500)
@@ -39,16 +38,14 @@ def _send_to_existing(paths: list[str]) -> bool:
 
 
 def _force_foreground(hwnd: int):
-    """Жёсткий вывод окна на передний план в Windows (без минимизации)."""
     if sys.platform != "win32":
         return
     try:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
 
-        # Восстанавливаем, если свернуто
         if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.ShowWindow(hwnd, 9)
 
         foreground_hwnd = user32.GetForegroundWindow()
         foreground_tid = user32.GetWindowThreadProcessId(foreground_hwnd, None)
@@ -77,18 +74,12 @@ def main() -> None:
     app.setApplicationName("Majestic Log Analyzer")
     app.setStyleSheet(STYLE)
 
-    if getattr(sys, "frozen", False):
-        base_path = Path(sys._MEIPASS)
-    else:
-        base_path = APP_DIR
-
-    icon_ico = base_path / "icon.ico"
-    icon_png = base_path / "icon.png"
-    
-    if icon_ico.exists():
-        app.setWindowIcon(QIcon(str(icon_ico)))
-    elif icon_png.exists():
-        app.setWindowIcon(QIcon(str(icon_png)))
+    base_path = Path(getattr(sys, "_MEIPASS", APP_DIR))
+    for icon_name in ("icon.ico", "icon.png"):
+        icon_path = base_path / icon_name
+        if icon_path.exists():
+            app.setWindowIcon(QIcon(str(icon_path)))
+            break
 
     cli_paths = [p for p in sys.argv[1:] if p and Path(p).is_file()]
 
@@ -109,20 +100,18 @@ def main() -> None:
     def _handle_socket(sock: QLocalSocket):
         data = sock.readAll().data().decode("utf-8", errors="replace")
         sock.disconnectFromServer()
+        sock.deleteLater()
+
         paths = [p for p in data.split("\0") if p]
-        
         if paths:
             win.analyze_tab.add_files(paths)
-            
-            # Если окно свернуто в панель задач — разворачиваем
-            if win.isMinimized():
-                win.showNormal()
-            
-            # Выводим на передний план ТОЛЬКО если оно сейчас не активно
-            if not win.isActiveWindow():
-                win.raise_()
-                win.activateWindow()
-                _force_foreground(int(win.winId()))
+
+        if win.isMinimized():
+            win.showNormal()
+        if not win.isActiveWindow():
+            win.raise_()
+            win.activateWindow()
+            _force_foreground(int(win.winId()))
 
     server.newConnection.connect(_on_new_connection)
 

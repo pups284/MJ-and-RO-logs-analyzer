@@ -66,14 +66,13 @@ def _seed_user_data(user_dir: Path) -> None:
         pass
 
     user_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("ui.json", "settings.json"):
-        s = src / name
-        d = user_dir / name
-        if s.exists() and not d.exists():
-            try:
-                shutil.copy2(s, d)
-            except Exception as e:
-                print(f"[storage] seed {name} failed: {e}")
+    source = src / "ui.json"
+    target = user_dir / "ui.json"
+    if source.exists() and not target.exists():
+        try:
+            shutil.copy2(source, target)
+        except OSError as e:
+            print(f"[storage] seed ui.json failed: {e}")
 
 
 def _migrate_notes_file(user_dir: Path) -> None:
@@ -117,7 +116,6 @@ RULES_FILE = DATA_DIR / "rules.json"
 NOTES_FILE = DATA_DIR / "notes.json"
 EXCEPTIONS_FILE = DATA_DIR / "exceptions.json"
 UI_FILE = DATA_DIR / "ui.json"
-SETTINGS_FILE = DATA_DIR / "settings.json"
 
 
 def load_rules() -> list[Rule]:
@@ -208,29 +206,6 @@ def load_ui() -> dict:
 
 def save_ui(data: dict) -> None:
     UI_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def load_settings() -> dict:
-    if not SETTINGS_FILE.exists():
-        src = bundled_data_dir() / "settings.json"
-        if src.exists():
-            try:
-                SETTINGS_FILE.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-            except Exception:
-                pass
-        if not SETTINGS_FILE.exists():
-            return {}
-    try:
-        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def save_settings(data: dict) -> None:
-    SETTINGS_FILE.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

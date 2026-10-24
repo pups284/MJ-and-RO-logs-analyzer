@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-SEV_COLORS = {"error": "#ff5470", "warning": "#ffb547", "info": "#4dd0e1"}
 SEV_MARKS = {"error": "🔴", "warning": "🟡", "info": "🔵"}
 
 DARK_STYLE = """

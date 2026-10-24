@@ -14,17 +14,17 @@ from PySide6.QtWidgets import (
 
 from ..github_sync import GitHubSync
 from ..models import Rule
-from ..storage import DATA_DIR, RULES_FILE, load_rules, save_notes, save_rules
+from ..storage import DATA_DIR, load_rules, save_notes, save_rules
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
 
 def _lbl(text: str, tooltip: str = "") -> QLabel:
-    lbl = QLabel(text)
+    label = QLabel(text)
     if tooltip:
-        lbl.setToolTip(tooltip)
-    return lbl
+        label.setToolTip(tooltip)
+    return label
 
 
 class RulesTab(QWidget):
@@ -195,7 +195,7 @@ class RulesTab(QWidget):
     def _apply(self) -> bool:
         r = self.current
         if not r:
-            return False
+            return True
         bp = self.f_block.text().strip()
         if bp:
             try:
@@ -247,8 +247,10 @@ class RulesTab(QWidget):
 
     def reload(self) -> None:
         self.app.rules = load_rules()
+        self.current = None
         self.refresh()
         self.app.analyze_tab.run_analysis()
+        self.app.update_status()
 
     def update_from_github(self) -> None:
         if QMessageBox.question(

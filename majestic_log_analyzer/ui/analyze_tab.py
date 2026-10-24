@@ -1,25 +1,24 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QFileDialog, QHBoxLayout, QHeaderView,
-    QLabel, QListWidget, QListWidgetItem, QMenu, QMessageBox,
+    QAbstractItemView, QApplication, QDialog, QFileDialog, QHBoxLayout,
+    QHeaderView, QLabel, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTabWidget,
     QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from ..analysis import analyze, find_duplicate_note
+from ..analysis import analyze
 from ..log_metadata import extract_metadata, format_metadata, short_metadata_tag
-from ..models import Finding, LoadedFile, Note
+from ..models import Finding, LoadedFile, Note, utc_now_iso
 from ..normalization import detect_log_type
 from ..storage import save_notes, save_rules
-from ..style import SEV_COLORS, SEV_MARKS
+from ..style import SEV_MARKS
 from .common import section_label
 from .file_viewer import FileViewerWindow
 from .note_dialog import NoteDialog
@@ -29,8 +28,6 @@ if TYPE_CHECKING:
     from .main_window import MainWindow
 
 
-# ─────────────────────── Константы ───────────────────────
-
 ALLOWED_LOG_EXTENSIONS = {".log", ".txt"}
 
 
@@ -38,27 +35,35 @@ def _is_log_path(p) -> bool:
     return Path(p).suffix.lower() in ALLOWED_LOG_EXTENSIONS
 
 
-# Таблица находок: [значок, правило]
 COL_ICON = 0
 COL_RULE = 1
 COL_COUNT = 2
 
+SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
-# ─────────────────────── Вкладка ───────────────────────
+
+def _sorted_findings(items: list[Finding]) -> list[Finding]:
+    return sorted(
+        items,
+        key=lambda f: (
+            -f.priority,
+            SEVERITY_ORDER.get(f.severity, 9),
+            f.rule_name,
+        ),
+    )
+
 
 class AnalyzeTab(QWidget):
     def __init__(self, app: "MainWindow"):
         super().__init__()
         self.app = app
         self.current: Optional[Finding] = None
-        self._initialized = False
-        self._viewer_windows = {}
+        self._viewer_windows: dict[str, FileViewerWindow] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(10)
 
-        # ── Верхняя панель ──
         top = QHBoxLayout()
         top.setSpacing(8)
         self.btn_load = QPushButton("Загрузить логи…")
@@ -82,7 +87,6 @@ class AnalyzeTab(QWidget):
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(8)
 
-        # ── Левая колонка: файлы + метаданные ──
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
@@ -106,10 +110,8 @@ class AnalyzeTab(QWidget):
 
         splitter.addWidget(left)
 
-        # ── Центр: под-вкладки «Находки» и «Скрытые» ──
         self.middle_tabs = QTabWidget()
 
-        # Страница «Находки»
         findings_page = QWidget()
         fp_lay = QVBoxLayout(findings_page)
         fp_lay.setContentsMargins(0, 0, 0, 0)
@@ -131,7 +133,6 @@ class AnalyzeTab(QWidget):
 
         self.middle_tabs.addTab(findings_page, "Находки")
 
-        # Страница «Скрытые»
         hidden_page = QWidget()
         hp_lay = QVBoxLayout(hidden_page)
         hp_lay.setContentsMargins(0, 0, 0, 0)
@@ -181,7 +182,6 @@ class AnalyzeTab(QWidget):
 
         splitter.addWidget(self.middle_tabs)
 
-        # ── Правая колонка: детали ──
         right = QWidget()
         rv = QVBoxLayout(right)
         rv.setContentsMargins(8, 0, 0, 0)
@@ -197,7 +197,6 @@ class AnalyzeTab(QWidget):
         self.detail_meta.setWordWrap(True)
         rv.addWidget(self.detail_meta)
 
-        # ── Блок примечаний / исключений ──
         self.note_box = QWidget()
         nb = QVBoxLayout(self.note_box)
         nb.setContentsMargins(0, 0, 0, 0)
@@ -264,18 +263,12 @@ class AnalyzeTab(QWidget):
         splitter.setSizes([280, 700, 480])
         outer.addWidget(splitter, 1)
 
-        self._initialized = True
         self.middle_tabs.currentChanged.connect(self._on_middle_tab_changed)
 
-    # ───────── Под-вкладки ─────────
     def _on_middle_tab_changed(self, _idx: int):
-        if not self._initialized:
-            return
         self._clear_details()
 
     def _clear_details(self):
-        if not hasattr(self, "detail_title"):
-            return
         self.current = None
         self.detail_title.setText("<выберите находку>")
         self.detail_meta.setText("")
@@ -286,7 +279,14 @@ class AnalyzeTab(QWidget):
         self.detail_suggestion.setPlainText("")
         self.btn_faq.setEnabled(False)
 
-    # ───────── Файлы ─────────
+    def _finding_by_id(self, finding_id: int) -> Optional[Finding]:
+        return next((f for f in self.app.findings if id(f) == finding_id), None)
+
+    def close_all_viewers(self):
+        for window in list(self._viewer_windows.values()):
+            window.close()
+        self._viewer_windows.clear()
+
     def load_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Выберите логи", "",
@@ -328,27 +328,21 @@ class AnalyzeTab(QWidget):
             name = Path(p).name
             meta = extract_metadata(name, text)
             
-            # Проверяем, есть ли уже такой файл в списке
             existing = next((f for f in self.app.files if f.name == name), None)
             
             if existing:
-                # Если файл уже загружен — обновляем его данные "на месте",
-                # чтобы он не прыгал вниз списка
                 existing.content = text
                 existing.path = Path(p)
                 existing.metadata = meta
             else:
-                # Если файла нет — добавляем в конец
                 self.app.files.append(LoadedFile(
                     name=name, content=text, path=Path(p), metadata=meta,
                 ))
             
-            # Запоминаем имя, чтобы в конце выделить именно его
             target_name = name
 
         self.refresh_files()
 
-        # Выделяем последний обработанный файл (фокус)
         if target_name:
             self.files_list.blockSignals(True)
             for i in range(self.files_list.count()):
@@ -358,8 +352,6 @@ class AnalyzeTab(QWidget):
             self.files_list.blockSignals(False)
             self._update_file_info()
 
-        # Перезапускаем анализ (даже если файлов не прибавилось, 
-        # содержимое могло обновиться)
         if valid:
             self.run_analysis()
             
@@ -368,10 +360,7 @@ class AnalyzeTab(QWidget):
             QMessageBox.warning(self, "Некоторые файлы пропущены", msg)
 
     def clear_files(self):
-        for win in list(self._viewer_windows.values()):
-            win.close()
-        self._viewer_windows.clear()
-
+        self.close_all_viewers()
         self.app.files = []
         self.app.findings = []
         self.refresh_files()
@@ -435,11 +424,7 @@ class AnalyzeTab(QWidget):
         if lf:
             self._open_file_in_editor(lf)
 
-    # ───────── Контекстное меню файла ─────────
     def _files_context_menu(self, pos):
-        import subprocess
-        import sys
-
         item = self.files_list.itemAt(pos)
         if not item:
             return
@@ -467,7 +452,6 @@ class AnalyzeTab(QWidget):
         elif chosen is act_editor:
             self._open_file_in_editor(lf)
         elif chosen is act_copy_path:
-            from PySide6.QtWidgets import QApplication
             QApplication.clipboard().setText(str(lf.path))
         elif chosen is act_delete:
             self._remove_file(lf)
@@ -496,7 +480,6 @@ class AnalyzeTab(QWidget):
         ) != QMessageBox.Yes:
             return
 
-        # Закрываем редактор, если он открыт
         if lf.name in self._viewer_windows:
             win = self._viewer_windows.pop(lf.name)
             win.close()
@@ -507,7 +490,6 @@ class AnalyzeTab(QWidget):
         self.refresh_files()
         self.run_analysis()
 
-    # ───────── Анализ ─────────
     def run_analysis(self):
         prev_key = None
         if self.current:
@@ -527,14 +509,14 @@ class AnalyzeTab(QWidget):
 
     def _restore_selection(self, key: tuple):
         for row in range(self.table.rowCount()):
-            it = self.table.item(row, COL_ICON)
-            if not it:
+            item = self.table.item(row, COL_ICON)
+            if not item:
                 continue
-            fid = it.data(Qt.UserRole)
-            f = next((x for x in self.app.findings if id(x) == fid), None)
-            if f and (f.rule_id, f.file_name, f.signature) == key:
+            finding = self._finding_by_id(item.data(Qt.UserRole))
+            if finding and (finding.rule_id, finding.file_name,
+                            finding.signature) == key:
                 self.table.selectRow(row)
-                self.table.scrollToItem(it, QAbstractItemView.PositionAtCenter)
+                self.table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
                 return
         self._clear_details()
 
@@ -546,12 +528,11 @@ class AnalyzeTab(QWidget):
 
     def refresh_table(self):
         self.table.setRowCount(0)
-        visible = [f for f in self.app.findings if not f.is_hidden]
-        visible = self._filtered(visible)
-        order = {"error": 0, "warning": 1, "info": 2}
-        visible.sort(key=lambda f: (order.get(f.severity, 9), f.rule_name))
+        visible = self._filtered(
+            [f for f in self.app.findings if not f.is_hidden]
+        )
 
-        for f in visible:
+        for f in _sorted_findings(visible):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
@@ -564,12 +545,11 @@ class AnalyzeTab(QWidget):
 
     def refresh_hidden(self):
         self.hidden_table.setRowCount(0)
-        hidden = [f for f in self.app.findings if f.is_hidden]
-        hidden = self._filtered(hidden)
-        order = {"error": 0, "warning": 1, "info": 2}
-        hidden.sort(key=lambda f: (order.get(f.severity, 9), f.rule_name))
+        hidden = self._filtered(
+            [f for f in self.app.findings if f.is_hidden]
+        )
 
-        for f in hidden:
+        for f in _sorted_findings(hidden):
             row = self.hidden_table.rowCount()
             self.hidden_table.insertRow(row)
 
@@ -586,7 +566,6 @@ class AnalyzeTab(QWidget):
         self.btn_restore.setEnabled(bool(hidden))
         self.btn_restore_all.setEnabled(bool(hidden))
 
-    # ───────── Выбор ─────────
     def _on_findings_select(self):
         items = self.table.selectedItems()
         if not items:
@@ -595,8 +574,7 @@ class AnalyzeTab(QWidget):
         it = self.table.item(row, COL_ICON)
         if not it:
             return
-        fid = it.data(Qt.UserRole)
-        f = next((x for x in self.app.findings if id(x) == fid), None)
+        f = self._finding_by_id(it.data(Qt.UserRole))
         if f:
             self._show_finding(f)
 
@@ -607,8 +585,7 @@ class AnalyzeTab(QWidget):
         it = self.hidden_table.item(items[0].row(), COL_ICON)
         if not it:
             return
-        fid = it.data(Qt.UserRole)
-        f = next((x for x in self.app.findings if id(x) == fid), None)
+        f = self._finding_by_id(it.data(Qt.UserRole))
         if f:
             self._show_finding(f)
 
@@ -618,7 +595,6 @@ class AnalyzeTab(QWidget):
         meta = f"{f.file_name}  ·  {f.severity}  ·  {f.category or '—'}"
         self.detail_meta.setText(meta)
 
-        # ── блок примечаний ──
         if f.notes:
             parts: list[str] = []
             for n in f.notes:
@@ -645,7 +621,6 @@ class AnalyzeTab(QWidget):
         if self.current and self.current.faq_link:
             QDesktopServices.openUrl(QUrl(self.current.faq_link))
 
-    # ───────── Открыть в редакторе ─────────
     def open_in_editor(self):
         f = self.current
         if f:
@@ -685,7 +660,6 @@ class AnalyzeTab(QWidget):
                 win._jump(pos, length)
             return
 
-        # Убрали self из аргументов!
         win = FileViewerWindow(
             file_name, content, pos, length,
             on_create_rule=self._create_rule_from_text,
@@ -710,7 +684,6 @@ class AnalyzeTab(QWidget):
             f"Отредактировать можно во вкладке «Правила»."
         )
 
-    # ───────── Действия с находкой ─────────
     def mark_false_positive(self):
         f = self.current
         if not f:
@@ -726,7 +699,7 @@ class AnalyzeTab(QWidget):
             rule_id=f.rule_id, signature=f.signature, kind="ignore",
             title=f"Ложное срабатывание: {f.rule_name}",
             preview=f.context[:400],
-            created_at=datetime.utcnow().isoformat() + "Z",
+            created_at=utc_now_iso(),
         ))
         save_notes(self.app.notes)
         self.run_analysis()
@@ -751,7 +724,6 @@ class AnalyzeTab(QWidget):
         self.app.tabs.setCurrentWidget(self.app.rules_tab)
         self.app.rules_tab.select_rule(f.rule_id)
 
-    # ───────── Восстановление скрытых ─────────
     def restore_hidden_selected(self):
         rows = sorted({ix.row() for ix in self.hidden_table.selectedIndexes()})
         if not rows:
@@ -761,8 +733,7 @@ class AnalyzeTab(QWidget):
             it = self.hidden_table.item(r, COL_ICON)
             if not it:
                 continue
-            f = next((x for x in self.app.findings
-                      if id(x) == it.data(Qt.UserRole)), None)
+            f = self._finding_by_id(it.data(Qt.UserRole))
             if f:
                 n = f.ignore_note
                 if n:

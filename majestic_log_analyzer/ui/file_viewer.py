@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, QRegularExpression
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, QRegularExpression, Signal
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QKeySequence, QPainter, QPen,
     QShortcut, QSyntaxHighlighter, QTextCharFormat, QTextCursor,
     QTextDocument,
 )
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit,
-    QVBoxLayout, QWidget, QMainWindow
+    QApplication, QCheckBox, QDialogButtonBox, QHBoxLayout, QLabel,
+    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ..platform_win import apply_dark_title_bar
@@ -27,28 +27,24 @@ _MONO_CANDIDATES = (
 def _pick_mono_font() -> QFont:
     families = set(QFontDatabase.families())
     font = QFont()
-    for name in _MONO_CANDIDATES:
-        if name in families:
-            font.setFamily(name)
-            break
-    else:
-        font.setStyleHint(QFont.Monospace)
-        font.setFamily("monospace")
+    font.setFamily(next(
+        (name for name in _MONO_CANDIDATES if name in families), "monospace"
+    ))
     font.setStyleHint(QFont.Monospace)
     font.setFixedPitch(True)
     font.setPointSizeF(10.0)
     return font
 
 
-# ═══════════════════════════ Подсветка ═══════════════════════════
-
 class MajesticLogHighlighter(QSyntaxHighlighter):
-    def __init__(self, document: QTextDocument):
+    VISIBLE_MARGIN = 40
+
+    def __init__(self, document: QTextDocument, editor: "CodeEditor"):
         super().__init__(document)
+        self._editor = editor
         is_light = QApplication.instance().property("theme") == "light"
 
         self.fmt_ts      = self._fmt("#6b7280" if is_light else "#6b7385")
-        self.fmt_ok      = self._fmt("#059669" if is_light else "#7ee787", bold=True)
         self.fmt_warn    = self._fmt("#d97706" if is_light else "#ffb547")
         self.fmt_err     = self._fmt("#dc2626" if is_light else "#ff5470", bold=True)
         self.fmt_tag     = self._fmt("#7c3aed" if is_light else "#a99bff")
@@ -77,6 +73,15 @@ class MajesticLogHighlighter(QSyntaxHighlighter):
 
     def highlightBlock(self, text: str) -> None:
         if not text: return
+
+        first_visible = self._editor.firstVisibleBlock().blockNumber()
+        block_number = self.currentBlock().blockNumber()
+        last_visible = first_visible + self._editor.visible_line_count()
+        margin = self.VISIBLE_MARGIN
+        if (block_number < first_visible - margin
+                or block_number > last_visible + margin * 2):
+            return
+
         low = text.lower()
 
         if "[" in text:
@@ -113,8 +118,6 @@ class MajesticLogHighlighter(QSyntaxHighlighter):
                 m = it.next(); self.setFormat(m.capturedStart(), m.capturedLength(), self.fmt_server)
 
 
-# ═══════════════════════════ Миникарта ═══════════════════════════
-
 def _minimap_line_color(text: str) -> str:
     if not text: return "#2e3444"
     low = text.lower()
@@ -149,9 +152,6 @@ class MinimapWidget(QWidget):
         self._drag_start_y = 0
         self._drag_start_line = 0
         self._drag_first_line = 0
-        
-        self._doc_id = None
-        self._max_len = 100
 
         editor.updateRequest.connect(lambda *_: self.update())
         editor.verticalScrollBar().valueChanged.connect(self.update)
@@ -162,15 +162,10 @@ class MinimapWidget(QWidget):
     def _editor_first_line(self) -> int:
         return self._editor.firstVisibleBlock().blockNumber()
 
-    def _editor_visible_lines(self) -> int:
-        fm = self._editor.fontMetrics()
-        lh = max(1, fm.lineSpacing())
-        return max(1, self._editor.viewport().height() // lh)
-
     def _minimap_top_line(self) -> int:
         N = self._editor.document().blockCount()
         M = self._lines_visible()
-        E = self._editor_visible_lines()
+        E = self._editor.visible_line_count()
         if N <= M or N <= E: return 0
         first = self._editor_first_line()
         ratio = first / (N - E)
@@ -191,14 +186,7 @@ class MinimapWidget(QWidget):
         W = self.width()
         if total == 0 or H <= 0 or W <= 0: return
 
-        if self._doc_id != id(doc):
-            self._doc_id = id(doc)
-            self._max_len = 100
-            b = doc.firstBlock()
-            while b.isValid():
-                self._max_len = max(self._max_len, len(b.text()))
-                b = b.next()
-
+        max_len = self._editor.max_line_length
         first = self._minimap_top_line()
         last = min(total, first + self._lines_visible() + 1)
 
@@ -213,14 +201,14 @@ class MinimapWidget(QWidget):
             
             text_len = len(text)
             if text_len > 0:
-                w = min(W - 10, max(4, int((text_len / self._max_len) * (W - 10))))
+                w = min(W - 10, max(4, int((text_len / max_len) * (W - 10))))
                 painter.drawRect(5, y + 1, w, self.LINE_H - 1)
 
             block = block.next()
             y += self.LINE_H
 
         editor_first = self._editor_first_line()
-        editor_vis = self._editor_visible_lines()
+        editor_vis = self._editor.visible_line_count()
         vp_top = int((editor_first - first) * self.LINE_H)
         vp_h = max(6, editor_vis * self.LINE_H)
         vp_top = max(0, min(H - vp_h, vp_top))
@@ -236,7 +224,7 @@ class MinimapWidget(QWidget):
 
         self._drag_first_line = self._minimap_top_line()
         editor_first = self._editor_first_line()
-        editor_vis = self._editor_visible_lines()
+        editor_vis = self._editor.visible_line_count()
         vp_top = (editor_first - self._drag_first_line) * self.LINE_H
         vp_h = max(6, editor_vis * self.LINE_H)
 
@@ -265,7 +253,7 @@ class MinimapWidget(QWidget):
 
     def _scroll_to(self, y: float):
         N = self._editor.document().blockCount()
-        E = self._editor_visible_lines()
+        E = self._editor.visible_line_count()
         if N <= E: return
         vsb = self._editor.verticalScrollBar()
 
@@ -285,76 +273,129 @@ class MinimapWidget(QWidget):
             vsb.setValue(target_line)
 
 
-# ═══════════════════════════ Ленивый редактор ═══════════════════════════
-
 class LazyLogEditor(QPlainTextEdit):
     CHUNK_SIZE = 20000
+    JUMP_BACK = 3000
+    JUMP_AHEAD = 6000
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._all_lines = []
+        self._all_lines: list[str] = []
         self._loaded_start = 0
         self._loaded_end = 0
+        self._max_line_length = 100
         self._is_loading = False
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.setReadOnly(True)
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
 
-    def load_lines(self, lines: list[str]):
-        self._all_lines = lines
-        self._loaded_start = 0
-        self._loaded_end = min(len(lines), self.CHUNK_SIZE)
-        
-        self.setPlainText("\n".join(lines[self._loaded_start:self._loaded_end]))
-        self.moveCursor(QTextCursor.Start)
+    @property
+    def max_line_length(self) -> int:
+        return self._max_line_length
 
-    def ensure_loaded_up_to(self, char_pos: int):
-        current_len = len(self.toPlainText())
-        while current_len <= char_pos and self._loaded_end < len(self._all_lines):
-            next_start = self._loaded_end
-            next_end = min(len(self._all_lines), next_start + self.CHUNK_SIZE)
-            chunk_text = "\n" + "\n".join(self._all_lines[next_start:next_end])
-            
-            cursor = self.textCursor()
-            cursor.movePosition(QTextCursor.End)
-            cursor.insertText(chunk_text)
-            
-            self._loaded_end = next_end
-            current_len = len(self.toPlainText())
+    @property
+    def loaded_start(self) -> int:
+        return self._loaded_start
 
-    def _on_scroll(self, value):
-        if self._is_loading:
-            return
-            
-        sb = self.verticalScrollBar()
-        if value >= sb.maximum() - 100 and self._loaded_end < len(self._all_lines):
-            self._load_next_chunk()
+    def visible_line_count(self) -> int:
+        line_height = max(1, self.fontMetrics().lineSpacing())
+        return max(1, self.viewport().height() // line_height)
 
-    def _load_next_chunk(self):
+    def _replace_window(self, start: int, end: int) -> None:
         self._is_loading = True
         try:
-            sb = self.verticalScrollBar()
-            was_at_bottom = (sb.value() >= sb.maximum() - 20)
-            
-            next_start = self._loaded_end
-            next_end = min(len(self._all_lines), next_start + self.CHUNK_SIZE)
-            
-            cursor = self.textCursor()
-            cursor.movePosition(QTextCursor.End)
-            
-            chunk_text = "\n" + "\n".join(self._all_lines[next_start:next_end])
-            cursor.insertText(chunk_text)
-            
-            self._loaded_end = next_end
-            
-            if was_at_bottom:
-                sb.setValue(sb.maximum())
+            self.setPlainText("\n".join(self._all_lines[start:end]))
+            self._loaded_start = start
+            self._loaded_end = end
         finally:
             self._is_loading = False
 
+    def load_lines(self, lines: list[str]) -> None:
+        self._all_lines = lines
+        self._max_line_length = max(100, max(map(len, lines), default=0))
+        self._replace_window(0, min(len(lines), self.CHUNK_SIZE))
+        self.moveCursor(QTextCursor.Start)
 
-# ═══════════════════════════ Редактор с номерами строк ═══════════════════════════
+    def _char_to_line(self, char_pos: int) -> tuple[int, int]:
+        if char_pos <= 0 or not self._all_lines:
+            return 0, 0
+
+        offset = 0
+        for index, line in enumerate(self._all_lines):
+            next_offset = offset + len(line) + 1
+            if char_pos < next_offset:
+                return index, char_pos - offset
+            offset = next_offset
+
+        last = len(self._all_lines) - 1
+        return last, len(self._all_lines[last])
+
+    def jump_to_char(self, char_pos: int) -> int:
+        line_index, line_offset = self._char_to_line(char_pos)
+        start = max(0, line_index - self.JUMP_BACK)
+        end = min(len(self._all_lines), line_index + self.JUMP_AHEAD)
+        self._replace_window(start, end)
+
+        prefix = sum(len(line) + 1
+                     for line in self._all_lines[start:line_index])
+        return prefix + line_offset
+
+    def _append_lines(self) -> None:
+        end = min(len(self._all_lines), self._loaded_end + self.CHUNK_SIZE)
+        if end == self._loaded_end:
+            return
+        chunk = "\n".join(self._all_lines[self._loaded_end:end])
+        cursor = QTextCursor(self.document())
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText("\n" + chunk)
+        self._loaded_end = end
+
+    def _prepend_lines(self) -> None:
+        start = max(0, self._loaded_start - self.CHUNK_SIZE)
+        if start == self._loaded_start:
+            return
+
+        added = self._loaded_start - start
+        chunk = "\n".join(self._all_lines[start:self._loaded_start]) + "\n"
+        scrollbar = self.verticalScrollBar()
+        old_value = scrollbar.value()
+
+        self._is_loading = True
+        try:
+            cursor = QTextCursor(self.document())
+            cursor.movePosition(QTextCursor.Start)
+            cursor.insertText(chunk)
+            self._loaded_start = start
+            scrollbar.setValue(old_value + added)
+        finally:
+            self._is_loading = False
+
+    def _on_scroll(self, value: int) -> None:
+        if self._is_loading:
+            return
+
+        scrollbar = self.verticalScrollBar()
+        if (value >= scrollbar.maximum() - 100
+                and self._loaded_end < len(self._all_lines)):
+            self._load_next_chunk()
+        elif value <= 100 and self._loaded_start > 0:
+            self._load_prev_chunk()
+
+    def _load_next_chunk(self) -> None:
+        self._is_loading = True
+        try:
+            scrollbar = self.verticalScrollBar()
+            was_at_bottom = scrollbar.value() >= scrollbar.maximum() - 20
+            self._append_lines()
+            if was_at_bottom:
+                scrollbar.setValue(scrollbar.maximum())
+        finally:
+            self._is_loading = False
+
+    def _load_prev_chunk(self) -> None:
+        self._prepend_lines()
+
 
 class _LineNumberArea(QWidget):
     def __init__(self, editor: "CodeEditor"):
@@ -369,6 +410,8 @@ class _LineNumberArea(QWidget):
 
 
 class CodeEditor(LazyLogEditor):
+    visible_area_changed = Signal()
+
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._line_number_area = _LineNumberArea(self)
@@ -378,9 +421,6 @@ class CodeEditor(LazyLogEditor):
         self.blockCountChanged.connect(self._update_margins)
         self.updateRequest.connect(self._on_update_request)
         self._update_margins(0)
-
-    def minimap_enabled(self) -> bool:
-        return self._minimap_enabled
 
     def set_minimap_enabled(self, enabled: bool) -> None:
         if enabled == self._minimap_enabled: return
@@ -413,6 +453,7 @@ class CodeEditor(LazyLogEditor):
         if self._minimap_enabled:
             mw = self._minimap.width()
             self._minimap.setGeometry(QRect(cr.right() - mw + 1, cr.top(), mw, cr.height()))
+        self.visible_area_changed.emit()
 
     def line_number_area_paint_event(self, event):
         painter = QPainter(self._line_number_area)
@@ -422,7 +463,7 @@ class CodeEditor(LazyLogEditor):
         
         painter.fillRect(event.rect(), QColor(bg_color))
         block = self.firstVisibleBlock()
-        block_number = block.blockNumber()
+        block_number = block.blockNumber() + self._loaded_start
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
         bottom = top + self.blockBoundingRect(block).height()
         height = self.fontMetrics().height()
@@ -436,8 +477,6 @@ class CodeEditor(LazyLogEditor):
             bottom = top + self.blockBoundingRect(block).height()
             block_number += 1
 
-
-# ═══════════════════════════ Панель поиска ═══════════════════════════
 
 class _FindBar(QWidget):
     def __init__(self, editor: CodeEditor, dialog: "FileViewerWindow"):
@@ -553,8 +592,6 @@ class _FindBar(QWidget):
         self.dialog.set_find_selections(sels)
 
 
-# ═══════════════════════════ Окно редактора ═══════════════════════════
-
 class FileViewerWindow(QMainWindow):
     def __init__(self, file_name: str, content: str, pos: int, length: int,
                  on_create_rule: Optional[Callable[[str], None]] = None):
@@ -595,6 +632,14 @@ class FileViewerWindow(QMainWindow):
         v.addWidget(self.editor, 1)
 
         self._highlighter = None
+        self._highlight_timer = QTimer(self)
+        self._highlight_timer.setSingleShot(True)
+        self._highlight_timer.setInterval(60)
+        self._highlight_timer.timeout.connect(self._refresh_visible_highlight)
+        self.editor.verticalScrollBar().valueChanged.connect(
+            lambda *_: self._highlight_timer.start()
+        )
+        self.editor.visible_area_changed.connect(self._highlight_timer.start)
 
         self.chk_minimap = QCheckBox("Миникарта")
         self.chk_minimap.setChecked(True)
@@ -640,16 +685,30 @@ class FileViewerWindow(QMainWindow):
         self._base_selections: list[QTextEdit.ExtraSelection] = []
         self._find_selections: list[QTextEdit.ExtraSelection] = []
 
-        self._pos = pos
-        self._len = length
         if pos > 0:
-            QTimer.singleShot(100, lambda: self._jump(pos, length))
+            QTimer.singleShot(100, self, lambda: self._jump(pos, length))
         else:
             self.editor.moveCursor(QTextCursor.Start)
 
     def _attach_highlighter(self):
         if self._highlighter is None:
-            self._highlighter = MajesticLogHighlighter(self.editor.document())
+            self._highlighter = MajesticLogHighlighter(
+                self.editor.document(), self.editor
+            )
+            self._highlight_timer.start()
+
+    def _refresh_visible_highlight(self):
+        if self._highlighter is None:
+            return
+        block = self.editor.firstVisibleBlock()
+        count = (self.editor.visible_line_count()
+                 + MajesticLogHighlighter.VISIBLE_MARGIN)
+        for _ in range(count):
+            if not block.isValid():
+                break
+            self._highlighter.rehighlightBlock(block)
+            block = block.next()
+        self.editor.viewport().update()
 
     def set_find_selections(self, sels: list[QTextEdit.ExtraSelection]):
         self._find_selections = sels
@@ -662,11 +721,11 @@ class FileViewerWindow(QMainWindow):
         self.find_bar.open_bar()
 
     def _jump(self, pos: int, length: int):
-        self.editor.ensure_loaded_up_to(pos)
+        rel_pos = self.editor.jump_to_char(pos)
         
         doc_len = max(0, self.editor.document().characterCount() - 1)
-        start = max(0, min(pos, doc_len))
-        end = max(start, min(pos + max(length, 1), doc_len))
+        start = max(0, min(rel_pos, doc_len))
+        end = max(start, min(rel_pos + max(length, 1), doc_len))
         cursor = self.editor.textCursor()
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.KeepAnchor)
@@ -681,7 +740,10 @@ class FileViewerWindow(QMainWindow):
         fmt.setForeground(QColor("#854d0e" if is_light else "#ffd479"))
         sel.format = fmt
         self._base_selections = [sel]
+        self._find_selections = []
         self._apply_extra_selections()
+        self._attach_highlighter()
+        self._highlight_timer.start()
         self.editor.setFocus()
 
     def _create_rule_from_selection(self):
@@ -701,7 +763,7 @@ class FileViewerWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         apply_dark_title_bar(self)
-        QTimer.singleShot(300, self._attach_highlighter)
+        QTimer.singleShot(300, self, self._attach_highlighter)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.find_bar.isVisible():

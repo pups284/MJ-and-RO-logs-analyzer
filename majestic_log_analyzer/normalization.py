@@ -49,17 +49,10 @@ def extract_context(content: str, idx: int, length: int) -> str:
     end = min(len(lines), line_idx + 3)
     return "\n".join(lines[start:end])
 
-# ─────────────── Сессия main.log ───────────────
-# main.log накапливает много заходов. Актуальным считаем последний —
-# тот, что идёт после последней строки-маркера. Пример такой строки:
-#   [2026-10-11 23:33:02.186] [info]  [ (startup)           ] system Windows certificates loaded (win-ca)
 SESSION_MARKER = "(startup)"
 
 
 def find_session_start(content: str) -> int:
-    """Индекс начала последней сессии. 0, если маркер не найден.
-    Возвращает позицию начала строки, в которой стоит SESSION_MARKER,
-    чтобы сама эта строка попадала в анализируемый регион."""
     lower = content.lower()
     idx = lower.rfind(SESSION_MARKER.lower())
     if idx < 0:
