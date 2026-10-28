@@ -20,6 +20,25 @@ def _find_primary(lower: str, primary: str) -> int:
     return lower.rfind(primary_low)
 
 
+def _pick_block(matches: list[re.Match], rule: Rule) -> re.Match:
+    all_of = [s.lower() for s in (rule.all_of or []) if s]
+    any_of = [s.lower() for s in (rule.any_of or []) if s]
+    if not all_of and not any_of:
+        return matches[0]
+
+    best = matches[0]
+    best_score = (-1, -1)
+    for match in matches:
+        block_lower = match.group(0).lower()
+        score = (
+            sum(1 for s in all_of if s in block_lower),
+            sum(1 for s in any_of if s in block_lower),
+        )
+        if score > best_score:
+            best, best_score = match, score
+    return best
+
+
 def rule_matches(rule: Rule, lower: str, content: str):
     if rule.all_of and any(s.lower() not in lower for s in rule.all_of):
         return None
@@ -34,10 +53,13 @@ def rule_matches(rule: Rule, lower: str, content: str):
 
     if rule.block_pattern:
         try:
-            match = re.compile(rule.block_pattern, re.I | re.S).search(content)
+            matches = list(
+                re.compile(rule.block_pattern, re.I | re.S).finditer(content)
+            )
         except re.error:
-            match = None
-        if match:
+            matches = []
+        if matches:
+            match = _pick_block(matches, rule)
             ctx = match.group(0)
             signature = ctx.split("\n", 1)[0][:200]
             return ctx, signature, match.start(), match.end() - match.start()
