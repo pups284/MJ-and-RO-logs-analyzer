@@ -418,7 +418,7 @@ class AnalyzeTab(QWidget):
 
         for p in valid:
             try:
-                text = Path(p).read_text(encoding="utf-8", errors="replace")
+                text = Path(p).read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
             except Exception as e:
                 skipped.append((p, str(e)))
                 continue
@@ -589,6 +589,8 @@ class AnalyzeTab(QWidget):
         self.run_analysis()
 
     def run_analysis(self):
+        for lf in self.app.files:
+            lf.content = "\n".join(lf.content.splitlines())
         prev_key = None
         if self.current:
             prev_key = (self.current.rule_id,
@@ -756,6 +758,9 @@ class AnalyzeTab(QWidget):
     def _show_viewer(self, file_name: str, content: str, pos: int, length: int):
         if file_name in self._viewer_windows:
             win = self._viewer_windows[file_name]
+            
+            win.editor.load_lines(content.splitlines())
+            
             if win.isMinimized():
                 win.showNormal()
             win.raise_()

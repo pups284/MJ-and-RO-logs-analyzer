@@ -37,17 +37,19 @@ def detect_log_type(name: str) -> str:
 
 
 def extract_context(content: str, idx: int, length: int) -> str:
-    lines = content.splitlines()
+    lines = content.splitlines(keepends=True)
     pos = 0
     line_idx = 0
     for i, ln in enumerate(lines):
         if pos + len(ln) >= idx:
             line_idx = i
             break
-        pos += len(ln) + 1
+        pos += len(ln)
+        
     start = max(0, line_idx - 2)
     end = min(len(lines), line_idx + 3)
-    return "\n".join(lines[start:end])
+    
+    return "".join(lines[start:end]).replace("\r", "")
 
 SESSION_MARKER = "(startup)"
 

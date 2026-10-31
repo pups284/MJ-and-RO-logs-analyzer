@@ -14,10 +14,10 @@ from .normalization import (
 
 def _find_primary(lower: str, primary: str) -> int:
     primary_low = primary.lower()
-    comma_idx = lower.rfind(primary_low + ",")
+    comma_idx = lower.find(primary_low + ",")
     if comma_idx >= 0:
         return comma_idx
-    return lower.rfind(primary_low)
+    return lower.find(primary_low)
 
 
 def _pick_block(matches: list[re.Match], rule: Rule) -> re.Match:

@@ -351,9 +351,17 @@ class LazyLogEditor(QPlainTextEdit):
         end = min(len(self._all_lines), line_index + self.JUMP_AHEAD)
         self._replace_window(start, end)
 
-        prefix = sum(len(line) + 1
-                     for line in self._all_lines[start:line_index])
-        return prefix + line_offset
+        local_line_index = line_index - start
+        block = self.document().findBlockByNumber(local_line_index)
+        if not block.isValid():
+            return 0
+            
+        line_text = self._all_lines[line_index]
+        prefix_text = line_text[:line_offset]
+        
+        utf16_offset = len(prefix_text.encode('utf-16-le')) // 2
+        
+        return block.position() + utf16_offset
 
     def _append_lines(self) -> None:
         end = min(len(self._all_lines), self._loaded_end + self.CHUNK_SIZE)
@@ -763,10 +771,13 @@ class FileViewerWindow(QMainWindow):
         
         doc_len = max(0, self.editor.document().characterCount() - 1)
         start = max(0, min(rel_pos, doc_len))
-        end = max(start, min(rel_pos + max(length, 1), doc_len))
+        
         cursor = self.editor.textCursor()
         cursor.setPosition(start)
+        
+        end = min(start + max(length, 1), doc_len)
         cursor.setPosition(end, QTextCursor.KeepAnchor)
+        
         self.editor.setTextCursor(cursor)
         self.editor.centerCursor()
 

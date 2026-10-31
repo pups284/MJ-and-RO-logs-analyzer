@@ -15,7 +15,7 @@ DEFAULT_DUPLICATE_EXPECTED: dict[str, int] = {
 
 
 def check_duplicate_weapon(content: str, lower: str, rule: Rule):
-    lines = content.splitlines()
+    lines = content.splitlines(keepends=True)
     suspicious = []
     for i, line in enumerate(lines):
         if "duplicate weapon item" in line.lower():
@@ -30,7 +30,7 @@ def check_duplicate_weapon(content: str, lower: str, rule: Rule):
     if not suspicious:
         return None
     first_line_idx, first_line, first_seen = suspicious[0]
-    pos = sum(len(l) + 1 for l in lines[:first_line_idx])
+    pos = sum(len(l) for l in lines[:first_line_idx])
     ctx = "\n".join(f"{l}\n - First seen: {s}" for _, l, s in suspicious[:5])
     sig = "dupweapon:" + first_seen
     return ctx, sig, pos, len(first_line)
