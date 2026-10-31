@@ -1,16 +1,17 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QDialog, QFileDialog, QHBoxLayout,
-    QHeaderView, QLabel, QListWidget, QListWidgetItem, QMenu, QMessageBox,
-    QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTabWidget,
-    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QDialog, QFileDialog, QFrame,
+    QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget,
+    QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
+    QScrollArea, QSizePolicy, QSplitter, QTabWidget, QTableWidget,
+    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ..analysis import analyze
@@ -18,8 +19,8 @@ from ..log_metadata import extract_metadata, format_metadata, short_metadata_tag
 from ..models import Finding, LoadedFile, Note, utc_now_iso
 from ..normalization import detect_log_type
 from ..storage import save_notes, save_rules
-from ..style import SEV_MARKS
-from .common import section_label
+from ..style import SEV_MARKS, SPACE, severity_color
+from .common import card_frame, section_label
 from .file_viewer import FileViewerWindow
 from .note_dialog import NoteDialog
 from .rule_from_selection import RuleFromSelectionDialog
@@ -61,11 +62,13 @@ class AnalyzeTab(QWidget):
         self._viewer_windows: dict[str, FileViewerWindow] = {}
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(10)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE["lg"])
 
-        top = QHBoxLayout()
-        top.setSpacing(8)
+        toolbar = card_frame()
+        top = QHBoxLayout(toolbar)
+        top.setContentsMargins(SPACE["md"], SPACE["md"], SPACE["md"], SPACE["md"])
+        top.setSpacing(SPACE["sm"])
         self.btn_load = QPushButton("Загрузить логи…")
         self.btn_load.setObjectName("Primary")
         self.btn_load.clicked.connect(self.load_files)
@@ -78,23 +81,39 @@ class AnalyzeTab(QWidget):
         btn_again.setObjectName("Ghost")
         btn_again.clicked.connect(self.run_analysis)
 
+        self.format_hint = QLabel("Поддерживаются .log и .txt")
+        self.format_hint.setObjectName("StatCaption")
+
         top.addWidget(self.btn_load)
         top.addWidget(btn_clear)
         top.addWidget(btn_again)
         top.addStretch(1)
-        outer.addLayout(top)
+        top.addWidget(self.format_hint)
+        outer.addWidget(toolbar)
 
         splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(8)
+        splitter.setHandleWidth(12)
 
-        left = QWidget()
+        left = card_frame()
         lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-        lv.setSpacing(6)
-        lv.addWidget(section_label("Файлы"))
+        lv.setContentsMargins(SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2)
+        lv.setSpacing(SPACE["sm"])
+        files_head = QHBoxLayout()
+        files_head.setContentsMargins(0, 0, 0, 0)
+        files_head.setSpacing(SPACE["sm"])
+        files_head.addWidget(section_label("Файлы"))
+        files_head.addStretch(1)
+        self.files_count = QLabel("0")
+        self.files_count.setObjectName("CountBadge")
+        files_head.addWidget(self.files_count)
+        lv.addLayout(files_head)
 
         self.files_list = QListWidget()
-        self.files_list.setMaximumWidth(360)
+        self.files_list.setObjectName("FlatList")
+        self.files_list.setMinimumWidth(180)
+        self.files_list.setFrameShape(QFrame.NoFrame)
+        self.files_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.files_list.setTextElideMode(Qt.ElideRight)
         self.files_list.itemSelectionChanged.connect(self._on_file_selected)
         self.files_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.files_list.customContextMenuRequested.connect(self._files_context_menu)
@@ -105,28 +124,52 @@ class AnalyzeTab(QWidget):
         self.file_info.setObjectName("FileInfo")
         self.file_info.setWordWrap(True)
         self.file_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.file_info.setMinimumHeight(60)
+        self.file_info.setMinimumHeight(72)
         lv.addWidget(self.file_info)
 
         splitter.addWidget(left)
 
+        middle = card_frame()
+        mv = QVBoxLayout(middle)
+        mv.setContentsMargins(SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2)
+        mv.setSpacing(SPACE["md"])
+
+        results_head = QHBoxLayout()
+        results_head.setContentsMargins(0, 0, 0, 0)
+        results_head.setSpacing(SPACE["sm"])
+        results_head.addWidget(section_label("Результаты"))
+        results_head.addStretch(1)
+        self.findings_count = QLabel("0")
+        self.findings_count.setObjectName("CountBadge")
+        results_head.addWidget(self.findings_count)
+        mv.addLayout(results_head)
+        mv.addSpacing(SPACE["sm"]) 
+
         self.middle_tabs = QTabWidget()
+        self.middle_tabs.setObjectName("InnerTabs")
+        self.middle_tabs.setDocumentMode(True)
 
         findings_page = QWidget()
         fp_lay = QVBoxLayout(findings_page)
-        fp_lay.setContentsMargins(0, 0, 0, 0)
-        fp_lay.setSpacing(6)
+        fp_lay.setContentsMargins(0, SPACE["sm"], 0, 0) 
+        fp_lay.setSpacing(SPACE["sm"])
 
         self.table = QTableWidget(0, COL_COUNT)
+        self.table.setObjectName("FlatTable")
         self.table.setHorizontalHeaderLabels(["", "Правило"])
+        self.table.setFrameShape(QFrame.NoFrame)
+        self.table.setShowGrid(False)
+        self.table.setMinimumWidth(280)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(COL_ICON, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(COL_RULE, QHeaderView.Stretch)
         h.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        h.setFixedHeight(36)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(34)
         self.table.itemSelectionChanged.connect(self._on_findings_select)
         self.table.doubleClicked.connect(self.open_in_editor)
         fp_lay.addWidget(self.table)
@@ -135,12 +178,12 @@ class AnalyzeTab(QWidget):
 
         hidden_page = QWidget()
         hp_lay = QVBoxLayout(hidden_page)
-        hp_lay.setContentsMargins(0, 0, 0, 0)
-        hp_lay.setSpacing(6)
+        hp_lay.setContentsMargins(0, SPACE["sm"], 0, 0)
+        hp_lay.setSpacing(SPACE["sm"])
 
         hidden_top = QHBoxLayout()
         hidden_top.setContentsMargins(0, 0, 0, 0)
-        hidden_top.setSpacing(6)
+        hidden_top.setSpacing(SPACE["sm"])
 
         self.hidden_info = QLabel("Скрытых находок: 0")
         self.hidden_info.setObjectName("DetailMeta")
@@ -164,47 +207,64 @@ class AnalyzeTab(QWidget):
         hp_lay.addLayout(hidden_top)
 
         self.hidden_table = QTableWidget(0, COL_COUNT)
+        self.hidden_table.setObjectName("FlatTable")
         self.hidden_table.setHorizontalHeaderLabels(["", "Правило"])
+        self.hidden_table.setFrameShape(QFrame.NoFrame)
+        self.hidden_table.setShowGrid(False)
         hh = self.hidden_table.horizontalHeader()
         hh.setSectionResizeMode(COL_ICON, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(COL_RULE, QHeaderView.Stretch)
         hh.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        hh.setFixedHeight(36)
         self.hidden_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.hidden_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.hidden_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.hidden_table.setAlternatingRowColors(True)
         self.hidden_table.verticalHeader().setVisible(False)
+        self.hidden_table.verticalHeader().setDefaultSectionSize(34)
         self.hidden_table.itemSelectionChanged.connect(self._on_hidden_select)
         self.hidden_table.doubleClicked.connect(self.open_in_editor)
         hp_lay.addWidget(self.hidden_table)
 
         self.middle_tabs.addTab(hidden_page, "Скрытые (0)")
 
-        splitter.addWidget(self.middle_tabs)
+        mv.addWidget(self.middle_tabs, 1)
+        splitter.addWidget(middle)
 
-        right = QWidget()
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(8, 0, 0, 0)
-        rv.setSpacing(10)
+        right = card_frame()
+        right.setMinimumWidth(345)
+        right_outer = QVBoxLayout(right)
+        right_outer.setContentsMargins(0, 0, 0, 0)
+        right_outer.setSpacing(0)
 
-        self.detail_title = QLabel("<выберите находку>")
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QScrollArea.NoFrame)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        right_content = QWidget()
+        rv = QVBoxLayout(right_content)
+        rv.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
+        rv.setSpacing(SPACE["sm"])
+
+        self.detail_title = QLabel("Выберите находку")
         self.detail_title.setObjectName("DetailTitle")
         self.detail_title.setWordWrap(True)
         rv.addWidget(self.detail_title)
 
-        self.detail_meta = QLabel("")
+        self.detail_meta = QLabel("Сведения о срабатывании появятся здесь.")
         self.detail_meta.setObjectName("DetailMeta")
         self.detail_meta.setWordWrap(True)
         rv.addWidget(self.detail_meta)
+        rv.addSpacing(SPACE["xs"])
 
         self.note_box = QWidget()
         nb = QVBoxLayout(self.note_box)
         nb.setContentsMargins(0, 0, 0, 0)
-        nb.setSpacing(4)
+        nb.setSpacing(SPACE["xs"])
         nb.addWidget(section_label("Примечания"))
         self.note_comment_edit = QPlainTextEdit()
         self.note_comment_edit.setReadOnly(True)
-        self.note_comment_edit.setMaximumHeight(140)
+        self.note_comment_edit.setMaximumHeight(120)
         nb.addWidget(self.note_comment_edit)
         self.note_box.setVisible(False)
         rv.addWidget(self.note_box)
@@ -212,41 +272,53 @@ class AnalyzeTab(QWidget):
         rv.addWidget(section_label("Что нашли"))
         self.detail_context = QPlainTextEdit()
         self.detail_context.setReadOnly(True)
-        self.detail_context.setMaximumHeight(170)
+        self.detail_context.setMaximumHeight(160)
         rv.addWidget(self.detail_context)
 
         rv.addWidget(section_label("Что это значит"))
         self.detail_explanation = QTextEdit()
         self.detail_explanation.setReadOnly(True)
-        self.detail_explanation.setMaximumHeight(110)
+        self.detail_explanation.setMaximumHeight(104)
         rv.addWidget(self.detail_explanation)
 
         rv.addWidget(section_label("Что ответить игроку"))
         self.detail_suggestion = QTextEdit()
         self.detail_suggestion.setReadOnly(True)
-        self.detail_suggestion.setMaximumHeight(110)
+        self.detail_suggestion.setMaximumHeight(104)
         rv.addWidget(self.detail_suggestion)
+        rv.addSpacing(SPACE["xs"])
 
-        btns = QHBoxLayout()
-        btns.setSpacing(8)
+        btns = QGridLayout()
+        btns.setContentsMargins(0, 0, 0, 0)
+        btns.setHorizontalSpacing(SPACE["sm"])
+        btns.setVerticalSpacing(SPACE["sm"])
+        btns.setColumnStretch(0, 1)
+        btns.setColumnStretch(1, 1)
+
         self.btn_open = QPushButton("Открыть в редакторе")
         self.btn_open.setObjectName("Primary")
+        self.btn_open.setToolTip("Открыть место срабатывания в просмотрщике лога")
         self.btn_fp = QPushButton("Ложное срабатывание")
         self.btn_fp.setObjectName("Danger")
-        self.btn_note = QPushButton("Добавить примечание…")
-        self.btn_edit = QPushButton("Редактировать правило")
+        self.btn_fp.setToolTip("Скрыть эту находку как ложное срабатывание")
+        self.btn_note = QPushButton("Примечание")
+        self.btn_note.setToolTip("Добавить примечание к находке")
+        self.btn_edit = QPushButton("Правило")
         self.btn_edit.setObjectName("Ghost")
+        self.btn_edit.setToolTip("Открыть правило в редакторе")
 
         self.btn_open.clicked.connect(self.open_in_editor)
         self.btn_fp.clicked.connect(self.mark_false_positive)
         self.btn_note.clicked.connect(self.add_note)
         self.btn_edit.clicked.connect(self.edit_rule)
 
-        btns.addWidget(self.btn_open)
-        btns.addWidget(self.btn_fp)
-        btns.addWidget(self.btn_note)
-        btns.addWidget(self.btn_edit)
-        btns.addStretch(1)
+        for button in (self.btn_open, self.btn_fp, self.btn_note, self.btn_edit):
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        btns.addWidget(self.btn_open, 0, 0, 1, 2)
+        btns.addWidget(self.btn_note, 1, 0)
+        btns.addWidget(self.btn_edit, 1, 1)
+        btns.addWidget(self.btn_fp, 2, 0, 1, 2)
         rv.addLayout(btns)
 
         self.btn_faq = QPushButton("Открыть FAQ")
@@ -256,22 +328,47 @@ class AnalyzeTab(QWidget):
         rv.addWidget(self.btn_faq)
         rv.addStretch(1)
 
+        right_scroll.setWidget(right_content)
+        self.detail_scroll = right_scroll
+        right_outer.addWidget(right_scroll)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 4)
         splitter.setStretchFactor(2, 3)
-        splitter.setSizes([280, 700, 480])
+        splitter.setChildrenCollapsible(False)
+        splitter.setSizes([220, 560, 420])
         outer.addWidget(splitter, 1)
 
         self.middle_tabs.currentChanged.connect(self._on_middle_tab_changed)
 
     def _on_middle_tab_changed(self, _idx: int):
         self._clear_details()
+        self.table.clearSelection()
+        self.hidden_table.clearSelection()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "format_hint"):
+            self.format_hint.setVisible(self.width() >= 1000)
+
+    def apply_theme_colors(self):
+        for table in (self.table, self.hidden_table):
+            for row in range(table.rowCount()):
+                item = table.item(row, COL_ICON)
+                if not item:
+                    continue
+                finding = self._finding_by_id(item.data(Qt.UserRole))
+                if finding:
+                    item.setForeground(
+                        QColor(severity_color(self.app.current_theme, finding.severity))
+                    )
 
     def _clear_details(self):
         self.current = None
-        self.detail_title.setText("<выберите находку>")
-        self.detail_meta.setText("")
+        self.detail_title.setText("Выберите находку")
+        self.detail_meta.setText("Сведения о срабатывании появятся здесь.")
+        if hasattr(self, "detail_scroll"):
+            self.detail_scroll.verticalScrollBar().setValue(0)
         self.note_box.setVisible(False)
         self.note_comment_edit.setPlainText("")
         self.detail_context.setPlainText("")
@@ -398,6 +495,7 @@ class AnalyzeTab(QWidget):
                     self.files_list.setCurrentRow(i)
                     break
         self.files_list.blockSignals(False)
+        self.files_count.setText(str(self.files_list.count()))
         self._update_file_info()
 
     def _update_file_info(self):
@@ -532,13 +630,16 @@ class AnalyzeTab(QWidget):
             [f for f in self.app.findings if not f.is_hidden]
         )
 
+        self.findings_count.setText(str(len(visible)))
+
         for f in _sorted_findings(visible):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            it_icon = QTableWidgetItem(SEV_MARKS.get(f.severity, "•"))
+            it_icon = QTableWidgetItem(SEV_MARKS.get(f.severity, "●"))
             it_icon.setData(Qt.UserRole, id(f))
             it_icon.setTextAlignment(Qt.AlignCenter)
+            it_icon.setForeground(QColor(severity_color(self.app.current_theme, f.severity)))
             self.table.setItem(row, COL_ICON, it_icon)
 
             self.table.setItem(row, COL_RULE, QTableWidgetItem(f.rule_name))
@@ -553,9 +654,10 @@ class AnalyzeTab(QWidget):
             row = self.hidden_table.rowCount()
             self.hidden_table.insertRow(row)
 
-            sev = QTableWidgetItem(SEV_MARKS.get(f.severity, "•"))
+            sev = QTableWidgetItem(SEV_MARKS.get(f.severity, "●"))
             sev.setData(Qt.UserRole, id(f))
             sev.setTextAlignment(Qt.AlignCenter)
+            sev.setForeground(QColor(severity_color(self.app.current_theme, f.severity)))
             self.hidden_table.setItem(row, COL_ICON, sev)
 
             self.hidden_table.setItem(row, COL_RULE,
@@ -591,6 +693,8 @@ class AnalyzeTab(QWidget):
 
     def _show_finding(self, f: Finding):
         self.current = f
+        if hasattr(self, "detail_scroll"):
+            self.detail_scroll.verticalScrollBar().setValue(0)
         self.detail_title.setText(f.rule_name)
         meta = f"{f.file_name}  ·  {f.severity}  ·  {f.category or '—'}"
         self.detail_meta.setText(meta)

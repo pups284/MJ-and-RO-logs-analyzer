@@ -7,11 +7,13 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QLineEdit, QMessageBox, QPlainTextEdit, QVBoxLayout,
+    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QScrollArea, QVBoxLayout,
+    QWidget,
 )
 
 from ..models import Rule
 from ..platform_win import apply_dark_title_bar
+from ..style import SPACE
 from .common import section_label
 
 
@@ -22,22 +24,42 @@ class RuleFromSelectionDialog(QDialog):
         app = QApplication.instance()
         if app and not app.windowIcon().isNull():
             self.setWindowIcon(app.windowIcon())
-        self.resize(700, 640)
+        self.resize(720, 700)
 
         self.result_rule: Optional[Rule] = None
 
         v = QVBoxLayout(self)
-        v.setContentsMargins(16, 16, 16, 16)
-        v.setSpacing(10)
+        v.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
+        v.setSpacing(SPACE["md"])
 
-        v.addWidget(section_label("Выделенный фрагмент"))
+        title = QLabel("Новое правило из выделения")
+        title.setObjectName("DialogTitle")
+        subtitle = QLabel("Проверьте фрагмент и задайте параметры поиска.")
+        subtitle.setObjectName("DialogSubtitle")
+        v.addWidget(title)
+        v.addWidget(subtitle)
+        v.addSpacing(SPACE["xs"])
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        content = QWidget()
+        cv = QVBoxLayout(content)
+        cv.setContentsMargins(0, 0, SPACE["sm"], 0)
+        cv.setSpacing(SPACE["sm"])
+
+        cv.addWidget(section_label("Выделенный фрагмент"))
         preview = QPlainTextEdit(selected_text[:3000])
         preview.setReadOnly(True)
+        preview.setMinimumHeight(90)
         preview.setMaximumHeight(120)
-        v.addWidget(preview)
+        cv.addWidget(preview)
 
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setHorizontalSpacing(SPACE["lg"])
+        form.setVerticalSpacing(SPACE["sm"])
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self.f_name = QLineEdit()
         self.f_name.setPlaceholderText("Например: Ошибка инициализации графики")
@@ -56,28 +78,36 @@ class RuleFromSelectionDialog(QDialog):
         self.f_cat = QLineEdit()
         form.addRow("Категория:", self.f_cat)
 
-        v.addLayout(form)
+        cv.addLayout(form)
 
-        v.addWidget(section_label("Что искать"))
+        cv.addWidget(section_label("Что искать"))
         self.f_pattern = QPlainTextEdit()
         self.f_pattern.setPlainText(selected_text.strip())
+        self.f_pattern.setMinimumHeight(80)
         self.f_pattern.setMaximumHeight(110)
-        v.addWidget(self.f_pattern)
+        cv.addWidget(self.f_pattern)
 
         self.f_regex = QCheckBox("Считать строку регулярным выражением (blockPattern)")
-        v.addWidget(self.f_regex)
+        cv.addWidget(self.f_regex)
 
-        v.addWidget(section_label("Что это значит"))
+        cv.addWidget(section_label("Что это значит"))
         self.f_expl = QPlainTextEdit()
-        v.addWidget(self.f_expl)
+        self.f_expl.setPlaceholderText("Объяснение причины ошибки")
+        self.f_expl.setMinimumHeight(70)
+        cv.addWidget(self.f_expl)
 
-        v.addWidget(section_label("Что ответить игроку"))
+        cv.addWidget(section_label("Что ответить игроку"))
         self.f_sugg = QPlainTextEdit()
-        v.addWidget(self.f_sugg)
+        self.f_sugg.setPlaceholderText("Готовый текст ответа игроку")
+        self.f_sugg.setMinimumHeight(70)
+        cv.addWidget(self.f_sugg)
 
-        v.addWidget(section_label("Ссылка на FAQ (необязательно)"))
+        cv.addWidget(section_label("Ссылка на FAQ (необязательно)"))
         self.f_faq = QLineEdit()
-        v.addWidget(self.f_faq)
+        cv.addWidget(self.f_faq)
+
+        scroll.setWidget(content)
+        v.addWidget(scroll, 1)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.button(QDialogButtonBox.Ok).setText("Создать правило")

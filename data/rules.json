@@ -484,14 +484,14 @@
   },
   {
     "id": "gfx-d3d-init",
-    "name": "Клиент: ошибка инициализации графики",
-    "log_type": "client",
+    "name": "Ошибка инициализации графики",
+    "log_type": "any",
     "severity": "error",
     "category": "Графика",
     "enabled": true,
     "priority": 0,
     "all_of": [
-      "err_gfx_d3d_init"
+      "ERR_GFX_D3D_INIT"
     ],
     "any_of": [],
     "none_of": [],
@@ -691,6 +691,27 @@
     "count_expected": [],
     "explanation": "Системе не удается обнаружить исполняемый файл DirectX10 или 11 или совместимую с ними видеокарту",
     "suggestion": "Переустановите DirectX, обновите/переустановите драйвер видеокарты",
+    "faq_link": ""
+  },
+  {
+    "id": "custom-b42e0d9e",
+    "name": "Ошибка загрузки файлов",
+    "log_type": "main",
+    "severity": "error",
+    "category": "",
+    "enabled": true,
+    "priority": 0,
+    "all_of": [
+      "download-failed"
+    ],
+    "any_of": [],
+    "none_of": [],
+    "block_pattern": null,
+    "custom_check": null,
+    "count_pattern": null,
+    "count_expected": [],
+    "explanation": "Произошла ошибка при загрузке файлов обновления. Возможные причины: отсутствие прав, плохое интернет-соединение",
+    "suggestion": "Если видны ошибки с интернетом (timeout, fetch failed и тп), то отключение zapret + VPN. Если такого не видно, то можно также попробовать удалить проблемную папку (например, Multiplayer)",
     "faq_link": ""
   }
 ]

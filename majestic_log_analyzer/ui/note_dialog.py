@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import uuid
 from typing import Optional
@@ -6,11 +6,12 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel,
-    QLineEdit, QPlainTextEdit, QTextEdit, QVBoxLayout,
+    QLineEdit, QPlainTextEdit, QScrollArea, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ..models import Finding, Note, utc_now_iso
 from ..platform_win import apply_dark_title_bar
+from ..style import SPACE
 from .common import section_label
 
 
@@ -44,20 +45,39 @@ class NoteDialog(QDialog):
             preview_text = finding.context[:2000]
 
         v = QVBoxLayout(self)
-        v.setContentsMargins(16, 16, 16, 16)
-        v.setSpacing(10)
+        v.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
+        v.setSpacing(SPACE["md"])
 
-        v.addWidget(section_label("Правило"))
-        v.addWidget(QLabel(rule_id))
+        title = QLabel("Редактирование записи" if existing else "Примечание к находке")
+        title.setObjectName("DialogTitle")
+        subtitle = QLabel("Заметка сохраняется локально и не меняет правило.")
+        subtitle.setObjectName("DialogSubtitle")
+        v.addWidget(title)
+        v.addWidget(subtitle)
+        v.addSpacing(SPACE["xs"])
 
-        v.addWidget(section_label("Сигнатура"))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        content = QWidget()
+        cv = QVBoxLayout(content)
+        cv.setContentsMargins(0, 0, SPACE["sm"], 0)
+        cv.setSpacing(SPACE["sm"])
+
+        cv.addWidget(section_label("Правило"))
+        cv.addWidget(QLabel(rule_id))
+
+        cv.addWidget(section_label("Сигнатура"))
         sig = QLabel(signature[:200] or "—")
         sig.setObjectName("DetailMeta")
         sig.setWordWrap(True)
-        v.addWidget(sig)
+        cv.addWidget(sig)
 
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setHorizontalSpacing(SPACE["lg"])
+        form.setVerticalSpacing(SPACE["sm"])
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self.kind_cb = QComboBox()
         self.kind_cb.addItem("Примечание (не скрывать)", "note")
@@ -67,17 +87,22 @@ class NoteDialog(QDialog):
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("Коротко, для таблицы")
         form.addRow("Заголовок:", self.title_edit)
-        v.addLayout(form)
+        cv.addLayout(form)
 
-        v.addWidget(section_label("Комментарий"))
+        cv.addWidget(section_label("Комментарий"))
         self.comment = QTextEdit()
-        v.addWidget(self.comment, 1)
+        self.comment.setMinimumHeight(150)
+        cv.addWidget(self.comment)
 
-        v.addWidget(section_label("Превью (то, что было в логе)"))
+        cv.addWidget(section_label("Превью (то, что было в логе)"))
         self.preview = QPlainTextEdit(preview_text)
         self.preview.setReadOnly(True)
-        self.preview.setMaximumHeight(140)
-        v.addWidget(self.preview)
+        self.preview.setMinimumHeight(110)
+        self.preview.setMaximumHeight(150)
+        cv.addWidget(self.preview)
+
+        scroll.setWidget(content)
+        v.addWidget(scroll, 1)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.button(QDialogButtonBox.Ok).setObjectName("Primary")

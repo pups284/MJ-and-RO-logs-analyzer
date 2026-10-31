@@ -10,7 +10,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
 from .storage import APP_DIR
-from .style import STYLE
+from .style import STYLE, apply_app_font
 from .ui.main_window import MainWindow
 
 
@@ -72,6 +72,8 @@ def main() -> None:
 
     app = QApplication(sys.argv)
     app.setApplicationName("Majestic Log Analyzer")
+    app.setStyle("Fusion")
+    apply_app_font(app)
     app.setStyleSheet(STYLE)
 
     base_path = Path(getattr(sys, "_MEIPASS", APP_DIR))

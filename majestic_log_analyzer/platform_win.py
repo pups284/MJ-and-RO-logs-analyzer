@@ -7,8 +7,12 @@ def apply_dark_title_bar(widget) -> None:
         return
     try:
         import ctypes
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        is_light = bool(app and app.property("theme") == "light")
         hwnd = int(widget.winId())
-        value = ctypes.c_int(1)
+        value = ctypes.c_int(0 if is_light else 1)
         for attr in (20, 19):
             res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
                 hwnd, attr, ctypes.byref(value), ctypes.sizeof(value)
@@ -16,4 +20,4 @@ def apply_dark_title_bar(widget) -> None:
             if res == 0:
                 break
     except Exception as e:
-        print("dark title bar failed:", e)
+        print("title bar theme failed:", e)

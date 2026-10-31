@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
     QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget,
 )
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 from ..github_sync import GitHubSync
 from ..models import Rule
 from ..storage import DATA_DIR, load_rules, save_notes, save_rules
+from ..style import SPACE
+from .common import card_frame, section_label
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -24,6 +26,8 @@ def _lbl(text: str, tooltip: str = "") -> QLabel:
     label = QLabel(text)
     if tooltip:
         label.setToolTip(tooltip)
+    if text:
+        label.setMinimumWidth(148)
     return label
 
 
@@ -36,49 +40,82 @@ class RulesTab(QWidget):
         self.worker: Optional[GitHubSync] = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(10)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE["lg"])
 
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        b_reload = QPushButton("Перечитать rules.json")
+        toolbar = card_frame()
+        top = QHBoxLayout(toolbar)
+        top.setContentsMargins(SPACE["md"], SPACE["md"], SPACE["md"], SPACE["md"])
+        top.setSpacing(SPACE["sm"])
+        b_reload = QPushButton("Перечитать")
         b_reload.setObjectName("Ghost")
+        b_reload.setToolTip("Перечитать rules.json с диска")
         b_reload.clicked.connect(self.reload)
         self.b_save = QPushButton("Сохранить")
         self.b_save.setObjectName("Primary")
         self.b_save.clicked.connect(self.save)
-        b_github = QPushButton("Обновить из GitHub")
-        b_github.setObjectName("Primary")
+        b_github = QPushButton("Из GitHub")
+        b_github.setToolTip("Обновить правила из GitHub")
         b_github.clicked.connect(self.update_from_github)
         top.addWidget(b_reload)
         top.addWidget(self.b_save)
         top.addWidget(b_github)
         top.addStretch(1)
 
-        b_new = QPushButton("Новое правило")
+        b_new = QPushButton("Добавить")
+        b_new.setToolTip("Создать новое правило")
         b_new.clicked.connect(self.new_rule)
         b_del = QPushButton("Удалить")
         b_del.setObjectName("Danger")
         b_del.clicked.connect(self.del_rule)
-        b_open = QPushButton("Открыть папку с данными")
+        b_open = QPushButton("Папка")
         b_open.setObjectName("Ghost")
+        b_open.setToolTip("Открыть папку с данными")
         b_open.clicked.connect(self.open_data_dir)
         for w in (b_new, b_del, b_open):
             top.addWidget(w)
-        outer.addLayout(top)
+        outer.addWidget(toolbar)
 
         split = QSplitter(Qt.Horizontal)
-        split.setHandleWidth(8)
+        split.setHandleWidth(12)
+
+        left = card_frame()
+        left.setMinimumWidth(220)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(
+            SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2
+        )
+        left_layout.setSpacing(SPACE["sm"])
+        list_head = QHBoxLayout()
+        list_head.setContentsMargins(0, 0, 0, 0)
+        list_head.setSpacing(SPACE["sm"])
+        list_head.addWidget(section_label("Библиотека"))
+        list_head.addStretch(1)
+        self.rules_count = QLabel("0")
+        self.rules_count.setObjectName("CountBadge")
+        list_head.addWidget(self.rules_count)
+        left_layout.addLayout(list_head)
 
         self.list = QListWidget()
+        self.list.setObjectName("FlatList")
+        self.list.setFrameShape(QFrame.NoFrame)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.ElideRight)
         self.list.itemSelectionChanged.connect(self.on_select)
-        split.addWidget(self.list)
+        left_layout.addWidget(self.list, 1)
+        split.addWidget(left)
 
         right = QWidget()
         form = QFormLayout(right)
-        form.setContentsMargins(12, 4, 12, 4)
-        form.setSpacing(8)
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setContentsMargins(SPACE["lg"], SPACE["md"], SPACE["lg"], SPACE["lg"])
+        form.setHorizontalSpacing(SPACE["lg"])
+        form.setVerticalSpacing(SPACE["sm"])
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.DontWrapRows)
+
+        form.addRow(section_label("Основное"))
 
         self.f_id = QLineEdit()
         self.f_id.setReadOnly(True)
@@ -107,14 +144,21 @@ class RulesTab(QWidget):
         self.f_prio.setRange(0, 1000)
         form.addRow(_lbl("Приоритет:", "Чем больше, тем выше в списке."), self.f_prio)
 
+        form.addRow(section_label("Условия поиска"))
+
         self.f_all = QPlainTextEdit()
         self.f_all.setPlaceholderText("по одному в строке")
+        self.f_all.setMinimumHeight(70)
         form.addRow(_lbl("Должны встречаться:", "Все эти подстроки должны быть в логе."), self.f_all)
 
         self.f_any = QPlainTextEdit()
+        self.f_any.setPlaceholderText("по одному в строке")
+        self.f_any.setMinimumHeight(62)
         form.addRow(_lbl("Хотя бы одно из:", "Любая из этих подстрок."), self.f_any)
 
         self.f_none = QPlainTextEdit()
+        self.f_none.setPlaceholderText("по одному в строке")
+        self.f_none.setMinimumHeight(62)
         form.addRow(_lbl("Не должно встречаться:", "Исключающие подстроки."), self.f_none)
 
         self.f_block = QLineEdit()
@@ -131,23 +175,46 @@ class RulesTab(QWidget):
         self.f_count_expected.setPlaceholderText("напр.: 8, 31")
         form.addRow(_lbl("Ожидаемые количества:", "Числа через запятую."), self.f_count_expected)
 
+        form.addRow(section_label("Ответ и пояснение"))
+
         self.f_expl = QPlainTextEdit()
+        self.f_expl.setPlaceholderText("Объяснение причины ошибки")
+        self.f_expl.setMinimumHeight(76)
         form.addRow(_lbl("Что это значит:", "Пояснение."), self.f_expl)
 
         self.f_sugg = QPlainTextEdit()
+        self.f_sugg.setPlaceholderText("Готовый текст ответа игроку")
+        self.f_sugg.setMinimumHeight(76)
         form.addRow(_lbl("Что ответить:", "Текст для игрока."), self.f_sugg)
 
         self.f_faq = QLineEdit()
         form.addRow(_lbl("FAQ:", "Ссылка на статью."), self.f_faq)
 
+        right_card = card_frame()
+        rc = QVBoxLayout(right_card)
+        rc.setContentsMargins(0, 0, 0, 0)
+        rc.setSpacing(0)
+
+        right_head = QWidget()
+        rh = QVBoxLayout(right_head)
+        rh.setContentsMargins(SPACE["lg"], SPACE["lg"] - 2, SPACE["lg"], SPACE["sm"])
+        rh.setSpacing(2)
+        rh.addWidget(section_label("Параметры правила"))
+        right_hint = QLabel("Условия поиска, пояснение и готовый ответ.")
+        right_hint.setObjectName("DetailMeta")
+        rh.addWidget(right_hint)
+        rc.addWidget(right_head)
+
         wrap = QScrollArea()
         wrap.setWidgetResizable(True)
         wrap.setFrameShape(QScrollArea.NoFrame)
         wrap.setWidget(right)
-        split.addWidget(wrap)
+        rc.addWidget(wrap, 1)
+
+        split.addWidget(right_card)
         split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 3)
-        split.setSizes([320, 900])
+        split.setSizes([300, 900])
         outer.addWidget(split, 1)
 
         self.refresh()
@@ -158,6 +225,7 @@ class RulesTab(QWidget):
             mark = "" if r.enabled else "   (off)"
             self.list.addItem(f"{r.name}{mark}")
             self.list.item(self.list.count() - 1).setData(Qt.UserRole, r.id)
+        self.rules_count.setText(str(self.list.count()))
 
     def select_rule(self, rule_id: str) -> None:
         for i in range(self.list.count()):

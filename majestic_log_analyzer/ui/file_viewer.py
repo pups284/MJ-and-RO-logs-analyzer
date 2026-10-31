@@ -2,20 +2,23 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, QRegularExpression, Signal
+from PySide6.QtCore import (
+    QEvent, QRect, QSize, Qt, QTimer, QRegularExpression, Signal,
+)
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QKeySequence, QPainter, QPen,
     QShortcut, QSyntaxHighlighter, QTextCharFormat, QTextCursor,
     QTextDocument,
 )
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QDialogButtonBox, QHBoxLayout, QLabel,
+    QApplication, QCheckBox, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ..platform_win import apply_dark_title_bar
-from .common import section_label
+from ..style import SPACE, theme_tokens
+from .common import card_frame, section_label
 
 
 _MONO_CANDIDATES = (
@@ -42,17 +45,18 @@ class MajesticLogHighlighter(QSyntaxHighlighter):
     def __init__(self, document: QTextDocument, editor: "CodeEditor"):
         super().__init__(document)
         self._editor = editor
-        is_light = QApplication.instance().property("theme") == "light"
+        theme = QApplication.instance().property("theme") or "dark"
+        tokens = theme_tokens(theme)
 
-        self.fmt_ts      = self._fmt("#6b7280" if is_light else "#6b7385")
-        self.fmt_warn    = self._fmt("#d97706" if is_light else "#ffb547")
-        self.fmt_err     = self._fmt("#dc2626" if is_light else "#ff5470", bold=True)
-        self.fmt_tag     = self._fmt("#7c3aed" if is_light else "#a99bff")
-        self.fmt_ok_txt  = self._fmt("#059669" if is_light else "#7ee787")
-        self.fmt_err_txt = self._fmt("#dc2626" if is_light else "#ff5470")
-        self.fmt_neutral = self._fmt("#6b7280" if is_light else "#8b94a3")
-        self.fmt_server  = self._fmt("#0891b2" if is_light else "#4dd0e1")
-        self.fmt_info    = self._fmt("#0891b2" if is_light else "#4dd0e1")
+        self.fmt_ts      = self._fmt(tokens["faint"])
+        self.fmt_warn    = self._fmt(tokens["warning"])
+        self.fmt_err     = self._fmt(tokens["error"], bold=True)
+        self.fmt_tag     = self._fmt(tokens["accent"])
+        self.fmt_ok_txt  = self._fmt(tokens["success"])
+        self.fmt_err_txt = self._fmt(tokens["error"])
+        self.fmt_neutral = self._fmt(tokens["muted"])
+        self.fmt_server  = self._fmt(tokens["muted"])
+        self.fmt_info    = self._fmt(tokens["muted"])
 
         self.re_ts = QRegularExpression(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]|\[\d{2}:\d{2}:\d{2}(?:\.\d{3})?\]")
         self.re_warn = QRegularExpression(r"\[(?:warn|warning|debug|trace)\]|\bERR_[A-Z0-9_]+\b|'(?:TIMEOUT|NETWORK|ABORTED)'")
@@ -119,22 +123,24 @@ class MajesticLogHighlighter(QSyntaxHighlighter):
 
 
 def _minimap_line_color(text: str) -> str:
-    if not text: return "#2e3444"
+    if not text:
+        return "#2E3444"
     low = text.lower()
-    is_light = QApplication.instance().property("theme") == "light"
-    
+    theme = QApplication.instance().property("theme") or "dark"
+    tokens = theme_tokens(theme)
+
     if ("err_" in low or "[error]" in low or "\"error\"" in low or "'error'" in low
             or " fatal" in low or " crashed" in low or "failed:" in low or " failed" in low):
-        return "#ef4444" if is_light else "#b04050"
-    if "[warn" in low: 
-        return "#d97706" if is_light else "#a07a2a"
-    if "success" in low or "loaded" in low or " ok " in f" {low} ": 
-        return "#10b981" if is_light else "#3d8a52"
-    if "majestic:" in low or "(patcher)" in low or "(client)" in low: 
-        return "#8b5cf6" if is_light else "#6a5da8"
-    if "[debug]" in low or "[trace]" in low: 
-        return "#9ca3af" if is_light else "#2e3444"
-    return "#6b7280" if is_light else "#3d4355"
+        return tokens["error"]
+    if "[warn" in low:
+        return tokens["warning"]
+    if "success" in low or "loaded" in low or " ok " in f" {low} ":
+        return tokens["success"]
+    if "majestic:" in low or "(patcher)" in low or "(client)" in low:
+        return tokens["accent"]
+    if "[debug]" in low or "[trace]" in low:
+        return tokens["faint"]
+    return tokens["muted"]
 
 
 class MinimapWidget(QWidget):
@@ -176,9 +182,9 @@ class MinimapWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, False)
         
-        is_light = QApplication.instance().property("theme") == "light"
-        bg_color = "#f9fafb" if is_light else "#0c0f16"
-        painter.fillRect(self.rect(), QColor(bg_color))
+        theme = QApplication.instance().property("theme") or "dark"
+        tokens = theme_tokens(theme)
+        painter.fillRect(self.rect(), QColor(tokens["code_bg"]))
 
         doc = self._editor.document()
         total = doc.blockCount()
@@ -213,8 +219,16 @@ class MinimapWidget(QWidget):
         vp_h = max(6, editor_vis * self.LINE_H)
         vp_top = max(0, min(H - vp_h, vp_top))
         
-        painter.fillRect(QRect(0, vp_top, W, vp_h), QColor(255, 255, 255, 40 if is_light else 22))
-        painter.setPen(QPen(QColor(0, 0, 0, 80) if is_light else QColor(255, 255, 255, 60), 1))
+        painter.fillRect(
+            QRect(0, vp_top, W, vp_h),
+            QColor(255, 255, 255, 34) if theme == "dark" else QColor(0, 0, 0, 18),
+        )
+        painter.setPen(
+            QPen(
+                QColor(0, 0, 0, 70) if theme == "light" else QColor(255, 255, 255, 52),
+                1,
+            )
+        )
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(QRect(0, vp_top, W - 1, max(0, vp_h - 1)))
 
@@ -457,11 +471,11 @@ class CodeEditor(LazyLogEditor):
 
     def line_number_area_paint_event(self, event):
         painter = QPainter(self._line_number_area)
-        is_light = QApplication.instance().property("theme") == "light"
-        bg_color = "#f9fafb" if is_light else "#0c0f16"
-        text_color = "#6b7280" if is_light else "#5b6376"
-        
-        painter.fillRect(event.rect(), QColor(bg_color))
+        theme = QApplication.instance().property("theme") or "dark"
+        tokens = theme_tokens(theme)
+
+        painter.fillRect(event.rect(), QColor(tokens["code_bg"]))
+        text_color = tokens["faint"]
         block = self.firstVisibleBlock()
         block_number = block.blockNumber() + self._loaded_start
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
@@ -481,11 +495,12 @@ class CodeEditor(LazyLogEditor):
 class _FindBar(QWidget):
     def __init__(self, editor: CodeEditor, dialog: "FileViewerWindow"):
         super().__init__(dialog)
+        self.setObjectName("FindBar")
         self.editor = editor
         self.dialog = dialog
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setContentsMargins(SPACE["sm"], SPACE["sm"], SPACE["sm"], SPACE["sm"])
+        lay.setSpacing(SPACE["sm"])
         self.edit = QLineEdit()
         self.edit.setPlaceholderText("Найти…")
         self.edit.returnPressed.connect(self.find_next)
@@ -583,9 +598,10 @@ class _FindBar(QWidget):
             sel = QTextEdit.ExtraSelection()
             sel.cursor = found
             fmt = QTextCharFormat()
-            is_light = QApplication.instance().property("theme") == "light"
-            fmt.setBackground(QColor("#fef08a" if is_light else "#4a3a1a"))
-            fmt.setForeground(QColor("#854d0e" if is_light else "#ffd479"))
+            theme = QApplication.instance().property("theme") or "dark"
+            tokens = theme_tokens(theme)
+            fmt.setBackground(QColor(tokens["code_selection_bg"]))
+            fmt.setForeground(QColor(tokens["code_selection_text"]))
             sel.format = fmt
             sels.append(sel)
             cursor = found
@@ -598,38 +614,60 @@ class FileViewerWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"Просмотр: {file_name}")
         self.resize(1200, 800)
+        self.setMinimumSize(900, 620)
         self.setWindowIcon(QApplication.instance().windowIcon())
         self._on_create_rule = on_create_rule
 
         central = QWidget()
+        central.setObjectName("ContentArea")
         self.setCentralWidget(central)
 
         v = QVBoxLayout(central)
-        v.setContentsMargins(14, 14, 14, 14)
-        v.setSpacing(10)
+        v.setContentsMargins(
+            SPACE["xl"], SPACE["lg"] + 2, SPACE["xl"], SPACE["lg"]
+        )
+        v.setSpacing(SPACE["md"])
 
-        head = QHBoxLayout()
-        head.addWidget(section_label("Файл"))
+        header = card_frame()
+        head = QHBoxLayout(header)
+        head.setContentsMargins(SPACE["lg"], SPACE["md"], SPACE["lg"], SPACE["md"])
+        head.setSpacing(SPACE["lg"])
+
+        file_box = QVBoxLayout()
+        file_box.setContentsMargins(0, 0, 0, 0)
+        file_box.setSpacing(1)
+        file_box.addWidget(section_label("Файл"))
         fname = QLabel(file_name)
         fname.setObjectName("DetailTitle")
-        head.addWidget(fname)
-        head.addStretch(1)
-        pos_label = QLabel(f"позиция: {pos}")
-        pos_label.setObjectName("DetailMeta")
-        head.addWidget(pos_label)
-        v.addLayout(head)
+        fname.setWordWrap(True)
+        file_box.addWidget(fname)
+        head.addLayout(file_box, 1)
+
+        pos_label = QLabel(f"ПОЗИЦИЯ {pos}")
+        pos_label.setObjectName("StatCaption")
+        head.addWidget(pos_label, 0, Qt.AlignTop)
+
+        self.chk_minimap = QCheckBox("Миникарта")
+        self.chk_minimap.setChecked(True)
+        head.addWidget(self.chk_minimap, 0, Qt.AlignVCenter)
+        v.addWidget(header)
 
         self.editor = CodeEditor()
         self.editor.setObjectName("FileViewerText")
         self.editor.setFont(_pick_mono_font())
         self.editor.setUndoRedoEnabled(False)
-        
+        self.chk_minimap.toggled.connect(self.editor.set_minimap_enabled)
+
         QApplication.setOverrideCursor(Qt.WaitCursor)
         lines = content.splitlines()
         self.editor.load_lines(lines)
         QApplication.restoreOverrideCursor()
 
-        v.addWidget(self.editor, 1)
+        editor_card = card_frame()
+        ec = QVBoxLayout(editor_card)
+        ec.setContentsMargins(SPACE["sm"], SPACE["sm"], SPACE["sm"], SPACE["sm"])
+        ec.addWidget(self.editor)
+        v.addWidget(editor_card, 1)
 
         self._highlighter = None
         self._highlight_timer = QTimer(self)
@@ -641,15 +679,14 @@ class FileViewerWindow(QMainWindow):
         )
         self.editor.visible_area_changed.connect(self._highlight_timer.start)
 
-        self.chk_minimap = QCheckBox("Миникарта")
-        self.chk_minimap.setChecked(True)
-        self.chk_minimap.toggled.connect(self.editor.set_minimap_enabled)
-        head.addWidget(self.chk_minimap)
-        head.addSpacing(12)
-
         self.find_bar = _FindBar(self.editor, self)
         self.find_bar.hide()
-        v.addWidget(self.find_bar)
+        v.insertWidget(1, self.find_bar)
+
+        footer = card_frame()
+        fv = QVBoxLayout(footer)
+        fv.setContentsMargins(SPACE["lg"], SPACE["md"], SPACE["lg"], SPACE["md"])
+        fv.setSpacing(SPACE["sm"])
 
         bb = QDialogButtonBox()
         btn_find = bb.addButton("Найти (Ctrl+F)", QDialogButtonBox.ActionRole)
@@ -666,7 +703,7 @@ class FileViewerWindow(QMainWindow):
             btn_new.clicked.connect(self._create_rule_from_selection)
 
         btn_close = bb.addButton("Закрыть", QDialogButtonBox.RejectRole)
-        btn_close.setObjectName("Primary")
+        btn_close.setObjectName("Ghost")
         bb.rejected.connect(self.close)
 
         info_text = "Подсвечено место, где сработала сигнатура. Ctrl+F — поиск, F3/Shift+F3 — вперёд/назад."
@@ -675,8 +712,9 @@ class FileViewerWindow(QMainWindow):
         info = QLabel(info_text)
         info.setObjectName("DetailMeta")
         info.setWordWrap(True)
-        v.addWidget(info)
-        v.addWidget(bb)
+        fv.addWidget(info)
+        fv.addWidget(bb)
+        v.addWidget(footer)
 
         QShortcut(QKeySequence("Ctrl+F"), self, context=Qt.WindowShortcut, activated=self._open_find_bar)
         QShortcut(QKeySequence("F3"), self, context=Qt.WindowShortcut, activated=self.find_bar.find_next)
@@ -735,9 +773,10 @@ class FileViewerWindow(QMainWindow):
         sel = QTextEdit.ExtraSelection()
         sel.cursor = cursor
         fmt = QTextCharFormat()
-        is_light = QApplication.instance().property("theme") == "light"
-        fmt.setBackground(QColor("#fef08a" if is_light else "#4a3a1a"))
-        fmt.setForeground(QColor("#854d0e" if is_light else "#ffd479"))
+        theme = QApplication.instance().property("theme") or "dark"
+        tokens = theme_tokens(theme)
+        fmt.setBackground(QColor(tokens["code_selection_bg"]))
+        fmt.setForeground(QColor(tokens["code_selection_text"]))
         sel.format = fmt
         self._base_selections = [sel]
         self._find_selections = []
@@ -759,6 +798,20 @@ class FileViewerWindow(QMainWindow):
             QMessageBox.information(self, "Пусто", "Нечего выделять.")
             return
         self._on_create_rule(text)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() != QEvent.StyleChange:
+            return
+        if getattr(self, "_highlighter", None) is not None:
+            self._highlighter.setDocument(None)
+            self._highlighter.deleteLater()
+            self._highlighter = None
+            self._attach_highlighter()
+        if getattr(self, "editor", None) is not None:
+            self.editor._minimap.update()
+        if getattr(self, "find_bar", None) is not None and self.find_bar.isVisible():
+            self.find_bar._refresh_highlight()
 
     def showEvent(self, event):
         super().showEvent(event)

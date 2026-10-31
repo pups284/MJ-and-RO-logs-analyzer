@@ -5,13 +5,15 @@ from typing import TYPE_CHECKING, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
+    QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
     QProgressDialog, QPushButton, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
 from ..github_sync import GitHubSync
 from ..storage import load_notes, save_notes
+from ..style import SPACE, theme_tokens
+from .common import card_frame, section_label
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -25,22 +27,26 @@ class ExceptionsTab(QWidget):
         self.worker: Optional[GitHubSync] = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(8)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE["lg"])
 
-        top = QHBoxLayout()
-        top.setSpacing(6)
-        b_reload = QPushButton("Перечитать exceptions.json")
+        toolbar = card_frame()
+        top = QHBoxLayout(toolbar)
+        top.setContentsMargins(SPACE["md"], SPACE["md"], SPACE["md"], SPACE["md"])
+        top.setSpacing(SPACE["sm"])
+        b_reload = QPushButton("Перечитать")
         b_reload.setObjectName("Ghost")
+        b_reload.setToolTip("Перечитать exceptions.json с диска")
         b_reload.clicked.connect(self.reload)
         b_save = QPushButton("Сохранить")
         b_save.setObjectName("Primary")
         b_save.clicked.connect(self.save)
-        b_github = QPushButton("Обновить из GitHub")
-        b_github.setObjectName("Primary")
+        b_github = QPushButton("Из GitHub")
+        b_github.setToolTip("Обновить исключения из GitHub")
         b_github.clicked.connect(self.update_from_github)
-        b_del = QPushButton("Удалить выбранные")
+        b_del = QPushButton("Удалить")
         b_del.setObjectName("Danger")
+        b_del.setToolTip("Удалить выбранные исключения")
         b_del.clicked.connect(self.del_selected)
 
         top.addWidget(b_reload)
@@ -48,18 +54,37 @@ class ExceptionsTab(QWidget):
         top.addWidget(b_github)
         top.addStretch(1)
         top.addWidget(b_del)
-        outer.addLayout(top)
+        outer.addWidget(toolbar)
 
         hint = QLabel(
             "Исключения скрывают находки из основной таблицы. "
             "Хранятся в exceptions.json. Убираются отсюда или из вкладки "
             "«Анализ → Скрытые»."
         )
-        hint.setObjectName("DetailMeta")
+        hint.setObjectName("HintBar")
         hint.setWordWrap(True)
         outer.addWidget(hint)
 
+        table_card = card_frame()
+        tc = QVBoxLayout(table_card)
+        tc.setContentsMargins(
+            SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2
+        )
+        tc.setSpacing(SPACE["sm"])
+        table_head = QHBoxLayout()
+        table_head.setContentsMargins(0, 0, 0, 0)
+        table_head.setSpacing(SPACE["sm"])
+        table_head.addWidget(section_label("Скрытые находки"))
+        table_head.addStretch(1)
+        self.count_lbl = QLabel("0")
+        self.count_lbl.setObjectName("CountBadge")
+        table_head.addWidget(self.count_lbl)
+        tc.addLayout(table_head)
+
         self.table = QTableWidget(0, 4)
+        self.table.setObjectName("FlatTable")
+        self.table.setFrameShape(QFrame.NoFrame)
+        self.table.setShowGrid(False)
         self.table.setHorizontalHeaderLabels(
             ["Правило", "Заголовок", "Сигнатура", "Создано"]
         )
@@ -69,17 +94,21 @@ class ExceptionsTab(QWidget):
         h.setSectionResizeMode(2, QHeaderView.Stretch)
         h.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         h.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        h.setFixedHeight(36)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        outer.addWidget(self.table, 1)
+        self.table.verticalHeader().setDefaultSectionSize(36)
+        tc.addWidget(self.table, 1)
+        outer.addWidget(table_card, 1)
 
         self.refresh()
 
     def refresh(self) -> None:
         self.table.setRowCount(0)
+        tokens = theme_tokens(self.app.current_theme)
         for n in self.app.notes:
             if n.kind != "ignore":
                 continue
@@ -91,9 +120,17 @@ class ExceptionsTab(QWidget):
             self.table.setItem(row, 0, it0)
             self.table.setItem(row, 1, QTableWidgetItem(n.title))
             sig = QTableWidgetItem(n.signature[:140])
-            sig.setForeground(QColor("#8b94a3"))
+            sig.setForeground(QColor(tokens["muted"]))
             self.table.setItem(row, 2, sig)
             self.table.setItem(row, 3, QTableWidgetItem((n.created_at or "")[:19]))
+        self.count_lbl.setText(str(self.table.rowCount()))
+
+    def apply_theme_colors(self) -> None:
+        tokens = theme_tokens(self.app.current_theme)
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 2)
+            if item:
+                item.setForeground(QColor(tokens["muted"]))
 
     def reload(self) -> None:
         self.app.notes = load_notes()

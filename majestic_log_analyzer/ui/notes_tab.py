@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QLabel, QLineEdit,
+    QAbstractItemView, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
     QProgressDialog, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 from ..github_sync import GitHubSync
 from ..models import Note
 from ..storage import load_notes, save_notes
-from .common import section_label
+from ..style import SPACE
+from .common import card_frame, section_label
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -29,22 +30,26 @@ class NotesTab(QWidget):
         self.worker: Optional[GitHubSync] = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(8)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE["lg"])
 
-        top = QHBoxLayout()
-        top.setSpacing(6)
-        b_reload = QPushButton("Перечитать notes.json")
+        toolbar = card_frame()
+        top = QHBoxLayout(toolbar)
+        top.setContentsMargins(SPACE["md"], SPACE["md"], SPACE["md"], SPACE["md"])
+        top.setSpacing(SPACE["sm"])
+        b_reload = QPushButton("Перечитать")
         b_reload.setObjectName("Ghost")
+        b_reload.setToolTip("Перечитать notes.json с диска")
         b_reload.clicked.connect(self.reload)
         b_save = QPushButton("Сохранить")
         b_save.setObjectName("Primary")
         b_save.clicked.connect(self.save)
-        b_github = QPushButton("Обновить из GitHub")
-        b_github.setObjectName("Primary")
+        b_github = QPushButton("Из GitHub")
+        b_github.setToolTip("Обновить примечания из GitHub")
         b_github.clicked.connect(self.update_from_github)
-        b_del = QPushButton("Удалить выбранные")
+        b_del = QPushButton("Удалить")
         b_del.setObjectName("Danger")
+        b_del.setToolTip("Удалить выбранные примечания")
         b_del.clicked.connect(self.del_selected)
 
         top.addWidget(b_reload)
@@ -52,30 +57,52 @@ class NotesTab(QWidget):
         top.addWidget(b_github)
         top.addStretch(1)
         top.addWidget(b_del)
-        outer.addLayout(top)
+        outer.addWidget(toolbar)
 
         hint = QLabel(
             "Примечания — записи к правилам и их сигнатурам. "
             "Хранятся в notes.json. Исключения живут в exceptions.json "
             "и редактируются во вкладке «Исключения»."
         )
-        hint.setObjectName("DetailMeta")
+        hint.setObjectName("HintBar")
         hint.setWordWrap(True)
         outer.addWidget(hint)
 
         split = QSplitter(Qt.Horizontal)
-        split.setHandleWidth(8)
+        split.setHandleWidth(12)
+
+        left = card_frame()
+        left.setMinimumWidth(240)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(
+            SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2, SPACE["lg"] - 2
+        )
+        left_layout.setSpacing(SPACE["sm"])
+        list_head = QHBoxLayout()
+        list_head.setContentsMargins(0, 0, 0, 0)
+        list_head.setSpacing(SPACE["sm"])
+        list_head.addWidget(section_label("Записи"))
+        list_head.addStretch(1)
+        self.notes_count = QLabel("0")
+        self.notes_count.setObjectName("CountBadge")
+        list_head.addWidget(self.notes_count)
+        left_layout.addLayout(list_head)
 
         self.list = QListWidget()
-        self.list.setObjectName("NotesList")
+        self.list.setObjectName("FlatList")
+        self.list.setFrameShape(QFrame.NoFrame)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.ElideRight)
         self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.list.itemSelectionChanged.connect(self.on_select)
-        split.addWidget(self.list)
+        left_layout.addWidget(self.list, 1)
+        split.addWidget(left)
 
-        right = QWidget()
+        right = card_frame()
+        right.setMinimumWidth(320)
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(12, 0, 0, 0)
-        rv.setSpacing(6)
+        rv.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
+        rv.setSpacing(SPACE["sm"])
 
         self.lbl_rule = QLabel("—")
         self.lbl_rule.setObjectName("DetailTitle")
@@ -94,15 +121,17 @@ class NotesTab(QWidget):
         rv.addWidget(section_label("Сигнатура"))
         rv.addWidget(self.lbl_sig)
         rv.addWidget(self.lbl_created)
-        rv.addSpacing(4)
+        rv.addSpacing(SPACE["xs"])
 
         rv.addWidget(section_label("Заголовок"))
         self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Короткий заголовок")
         self.title_edit.textChanged.connect(self._on_edit)
         rv.addWidget(self.title_edit)
 
         rv.addWidget(section_label("Комментарий"))
         self.comment_edit = QPlainTextEdit()
+        self.comment_edit.setPlaceholderText("Детали, которые важно сохранить")
         self.comment_edit.textChanged.connect(self._on_edit)
         rv.addWidget(self.comment_edit, 1)
 
@@ -113,7 +142,7 @@ class NotesTab(QWidget):
         split.addWidget(right)
         split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 3)
-        split.setSizes([380, 720])
+        split.setSizes([360, 720])
         outer.addWidget(split, 1)
 
         self.refresh()
@@ -133,6 +162,7 @@ class NotesTab(QWidget):
             item.setToolTip(n.comment or n.preview or "")
             self.list.addItem(item)
         self.list.blockSignals(False)
+        self.notes_count.setText(str(self.list.count()))
 
         if prev_id:
             for i in range(self.list.count()):
