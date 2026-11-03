@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-_RE_PLATFORM = re.compile(r"gtaPlatform:\s*'([^']+)'")
+_RE_PLATFORM = re.compile(r"(?:gtaPlatform|derivedPlatform):\s*'([^']+)'")
 _RE_GTA_PATH = re.compile(r"gtaPath:\s*'([^']+)'")
 
 _RE_GAME_PATH = re.compile(r"Game\s+path\s*[:=]\s*(.+?)(?:\r?\n|$)", re.I)

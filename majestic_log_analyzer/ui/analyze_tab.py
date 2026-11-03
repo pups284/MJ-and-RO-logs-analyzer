@@ -392,7 +392,7 @@ class AnalyzeTab(QWidget):
         if paths:
             self.add_files(paths)
 
-    def add_files(self, paths: list[str]):
+    def add_files(self, paths: list[str], *, auto_open: bool = False):
         valid: list[str] = []
         rejected: list[str] = []
         for p in paths:
@@ -414,6 +414,7 @@ class AnalyzeTab(QWidget):
             return
 
         target_name = None
+        first_loaded: Optional[LoadedFile] = None
         skipped: list[tuple[str, str]] = []
 
         for p in valid:
@@ -431,11 +432,15 @@ class AnalyzeTab(QWidget):
                 existing.content = text
                 existing.path = Path(p)
                 existing.metadata = meta
+                loaded = existing
             else:
-                self.app.files.append(LoadedFile(
+                loaded = LoadedFile(
                     name=name, content=text, path=Path(p), metadata=meta,
-                ))
-            
+                )
+                self.app.files.append(loaded)
+
+            if first_loaded is None:
+                first_loaded = loaded
             target_name = name
 
         self.refresh_files()
@@ -451,7 +456,11 @@ class AnalyzeTab(QWidget):
 
         if valid:
             self.run_analysis()
-            
+
+        if auto_open and first_loaded is not None:
+            self.app.tabs.setCurrentWidget(self)
+            self._open_file_in_editor(first_loaded)
+
         if skipped:
             msg = "\n".join(f"{p}: {err}" for p, err in skipped[:5])
             QMessageBox.warning(self, "Некоторые файлы пропущены", msg)

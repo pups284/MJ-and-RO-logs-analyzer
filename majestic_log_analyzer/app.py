@@ -9,12 +9,13 @@ from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
+from . import bridge
 from .storage import APP_DIR
 from .style import STYLE, apply_app_font
 from .ui.main_window import MainWindow
 
 
-SERVER_NAME = "MajesticLogAnalyzer_SingleInstance"
+SERVER_NAME = bridge.SERVER_NAME
 
 
 def _send_to_existing(paths: list[str]) -> bool:
@@ -29,7 +30,7 @@ def _send_to_existing(paths: list[str]) -> bool:
         except Exception:
             pass
 
-    payload = b"\0".join(p.encode("utf-8") for p in paths if p) or b"\0"
+    payload = bridge.encode_open_paths(paths, auto_open=False) + b"\n"
     socket.write(payload)
     socket.flush()
     socket.waitForBytesWritten(500)
@@ -95,25 +96,61 @@ def main() -> None:
     win = MainWindow()
     win.showMaximized()
 
-    def _on_new_connection():
-        sock = server.nextPendingConnection()
-        sock.readyRead.connect(lambda s=sock: _handle_socket(s))
-
-    def _handle_socket(sock: QLocalSocket):
-        data = sock.readAll().data().decode("utf-8", errors="replace")
-        sock.disconnectFromServer()
-        sock.deleteLater()
-
-        paths = [p for p in data.split("\0") if p]
-        if paths:
-            win.analyze_tab.add_files(paths)
-
+    def _bring_to_front():
         if win.isMinimized():
             win.showNormal()
         if not win.isActiveWindow():
             win.raise_()
             win.activateWindow()
             _force_foreground(int(win.winId()))
+
+    def _process_request(raw: bytes):
+        try:
+            request = bridge.parse_request(raw)
+            paths = list(request.paths)
+            paths.extend(bridge.materialize(request.inline_files))
+        except Exception as exc:
+            print(f"[bridge] rejected request: {exc}")
+            return
+
+        if paths:
+            win.analyze_tab.add_files(paths, auto_open=request.auto_open)
+        _bring_to_front()
+
+    def _handle_socket(sock: QLocalSocket):
+        state = {"buffer": bytearray(), "done": False}
+
+        def finish():
+            if state["done"]:
+                return
+            state["done"] = True
+            _process_request(bytes(state["buffer"]))
+            sock.deleteLater()
+
+        def read():
+            if state["done"]:
+                return
+            chunk = sock.readAll().data()
+            if not chunk:
+                return
+
+            state["buffer"].extend(chunk)
+            if len(state["buffer"]) > bridge.MAX_REQUEST_BYTES:
+                state["done"] = True
+                sock.abort()
+                sock.deleteLater()
+                return
+
+            if b"\n" in chunk:
+                finish()
+                sock.disconnectFromServer()
+
+        sock.readyRead.connect(read)
+        sock.disconnected.connect(finish)
+
+    def _on_new_connection():
+        sock = server.nextPendingConnection()
+        _handle_socket(sock)
 
     server.newConnection.connect(_on_new_connection)
 
